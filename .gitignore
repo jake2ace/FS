@@ -1,0 +1,21 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+backend/.data/
+backend/.cache/
+.pytest_cache/
+# node
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/.vercel/
+npm-debug.log*
+# env / secrets - never commit keys
+.env
+.env.*
+!.env.example
+# os / editors
+.DS_Store
+.idea/
+.vscode/

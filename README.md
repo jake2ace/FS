@@ -312,6 +312,12 @@ change the value in Render and redeploy; nothing in the repository or the fronte
 | `POST /api/analyse/{id}` · `GET /api/results` · `GET /api/results/{id}` | analyse one email / stored cases |
 | `POST /api/runs/full-inbox` · `GET /api/runs` · `GET /api/runs/{id}` · `POST /api/runs/{id}/cancel` · `POST /api/runs/{id}/retry/{email_id}` | batch processing with visible failures and retry |
 | `POST /api/cases/{id}/decision` | confirm · escalate · resolve · reopen (human in the loop) |
+
+**What escalating does, and does not do.** It keeps the case open, records who flagged it and why,
+and sorts it above everything else in the review queue. It routes nothing and notifies nobody -
+there is no supervisor mailbox behind it. It is an audit action with a position in the queue, and
+the roadmap's access control system is where a real routing step would belong.
+
 | `POST /api/cases/{id}/manual-review` | human category, outcome, defect fields, handling note |
 | `POST /api/cases/{id}/revision` · `GET /api/cases/{id}/revision/{revision_id}/file` | generate / download a corrected BL copy |
 | `POST /api/cases/{id}/readings` · `POST /api/cases/{id}/attachments` | corrected readings / replacement attachments |

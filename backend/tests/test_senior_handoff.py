@@ -66,6 +66,24 @@ async def test_failed_senior_goes_to_human_without_loop(kind):
     assert senior.judgements==(0 if kind=='failed_classification' else 1)
     assert r.docs
 
+@pytest.mark.parametrize('reason',['missing_value','missing_attachment'])
+async def test_failed_senior_keeps_the_primary_review_reason(reason):
+    """A technical senior failure is not a business finding: it must not overwrite a precise
+    primary review_reason with the generic 'unreadable' handoff."""
+    data=inputs(); payload=await response_for(data)
+    payload['documents'][0]['fields']['gross_weight_kg']=None
+    payload['comparisons']['gross_weight_kg']={'match':None,'reason':'unclear'}
+    payload.update(status='NEEDS_REVIEW',review_reason=reason)
+    primary=CountedAI(payload); senior=CountedAI(None)
+    r=await Analyser(MemoryInbox(data),primary,senior).analyse(EMAIL)
+    assert r.status=='NEEDS_REVIEW'
+    assert r.review_reason==reason, 'the primary reason must survive a failed senior call'
+    assert r.decision_method=='ai'
+    assert r.senior_review is not None and r.senior_review.available is False
+    assert [s['tier'] for s in r.decision_chain]==['primary','senior','human']
+    assert any('Senior review did not complete' in w for w in r.warnings)
+
+
 async def test_no_senior_configuration_means_human_handoff():
     r=await Analyser(MemoryInbox(inputs()),CountedAI(None)).analyse(EMAIL)
     assert r.decision_chain[-2]['available'] is False

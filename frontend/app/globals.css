@@ -228,3 +228,29 @@ details summary { cursor: pointer; font-weight: 600; }
 .rd circle, .rd g { transition:opacity .12s ease; }
 .run-split { display:grid; grid-template-columns:minmax(0,0.8fr) minmax(0,1.2fr); gap:16px; align-items:center; }
 @media (max-width: 900px) { .run-split { grid-template-columns:1fr; } }
+
+/* ---- case detail: the queue rail -------------------------------------- */
+/* A person handling cases needs to see what is left and step through it without
+   going back to the queue page every time. */
+.case-layout { display: grid; grid-template-columns: 262px minmax(0, 1fr); gap: 20px; align-items: start; }
+.case-main { min-width: 0; }
+.cq { position: sticky; top: 78px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 14px 12px; }
+.cq-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 11px; }
+.cq-title { font-weight: 600; font-size: 13.5px; }
+.cq-count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.cq-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.cq-nav .btn { justify-content: center; padding-left: 8px; padding-right: 8px; }
+.cq-list { max-height: calc(100vh - 290px); overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
+.cq-item { display: block; padding: 8px 10px; margin-bottom: 4px; border-radius: var(--radius-sm); border: 1px solid transparent; text-decoration: none; color: inherit; }
+.cq-item:hover { background: var(--card-2); text-decoration: none; }
+.cq-item.is-current { background: var(--accent-soft); border-color: var(--accent-line); }
+.cq-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cq-id { font-size: 12px; }
+.cq-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.cq-empty { font-size: 12.5px; color: var(--muted); padding: 6px 2px 2px; }
+.cq-hint { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line-soft); font-size: 11.5px; color: var(--faint); }
+@media (max-width: 1080px) {
+  .case-layout { grid-template-columns: 1fr; }
+  .cq { position: static; }
+  .cq-list { max-height: 240px; }
+}

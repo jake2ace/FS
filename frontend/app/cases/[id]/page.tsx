@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import CaseQueue from '@/components/CaseQueue';
 import FieldTable from '@/components/FieldTable';
 import ReviewWorkflow from '@/components/ReviewWorkflow';
 import { CategoryBadge, StatusBadge } from '@/components/StatusBadge';
@@ -95,7 +96,9 @@ export default function CaseDetail() {
   const alertCls = !r ? 'alert-info' : r.status === 'MISMATCH' ? 'alert-risk' : r.status === 'NEEDS_REVIEW' || r.ui_status === 'Needs review' ? 'alert-warn' : r.ui_status === 'Safe to complete' ? 'alert-safe' : 'alert-info';
 
   return (
-    <>
+    <div className="case-layout">
+      <CaseQueue current={id} />
+      <div className="case-main">
       <div className="page-head">
         <div>
           <div className="small muted"><Link href="/inbox">Smart Inbox</Link> / <span className="mono">{id}</span></div>
@@ -248,6 +251,7 @@ export default function CaseDetail() {
           </div>
         </>
       )}
-    </>
+      </div>
+    </div>
   );
 }

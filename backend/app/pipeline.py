@@ -68,6 +68,18 @@ class Analyser:
             available=senior.decision_method=='ai', triggers=[result.explanation],
             category=senior.category, outcome=senior.status, assessment=senior.explanation,
             category_confidence=senior.category_confidence, confidence=senior.confidence)
+        # A senior call that failed for technical reasons is not a business finding. It must not
+        # replace a verdict the primary model actually produced, nor turn a precise review_reason
+        # (missing_attachment / missing_value / wrong_doc_type) into a generic 'unreadable'.
+        if senior.decision_method != 'ai' and result.decision_method == 'ai':
+            kept = result.model_copy(deep=True)
+            kept.decision_chain = senior.decision_chain
+            kept.senior_review = senior.senior_review
+            kept.warnings = list(result.warnings) + [
+                f'Senior review did not complete: {senior.explanation} The primary finding was kept.']
+            if kept.status == 'NEEDS_REVIEW':
+                kept.decision_chain.append(dict(tier='human', status='pending'))
+            return kept
         # A failed senior classification cannot erase an already evidenced primary category.
         if senior.category is None and result.category is not None:
             for name in ('category','category_confidence','category_reason','category_evidence','category_method','intent','docs'):

@@ -170,7 +170,7 @@ class Analyser:
             return self._handoff(base, 'AI document analysis returned no usable result. The documents need human review; no match or mismatch was confirmed.', docs=infos, started=started)
         try:
             verdict = Verdict.model_validate(raw)
-            rows = self._validate_response(verdict, docs, infos)
+            rows = self._validate_response(verdict, docs, infos, base.get('intent', 'verify_documents'))
         except (ValidationError, ValueError) as exc:
             # Rejected output is not repaired or replaced by a rule-based judgement.
             detail = str(exc) if not isinstance(exc, ValidationError) else 'AI response schema is invalid: ' + '; '.join(
@@ -202,7 +202,8 @@ class Analyser:
             duration_ms=int((time.perf_counter()-started)*1000))
 
     @staticmethod
-    def _validate_response(v: Verdict, docs: list[ParsedDoc], infos: list[DocInfo]) -> list[FieldRow]:
+    def _validate_response(v: Verdict, docs: list[ParsedDoc], infos: list[DocInfo],
+                           intent: str = 'verify_documents') -> list[FieldRow]:
         if sorted(d.index for d in v.documents) != list(range(len(docs))):
             raise ValueError('AI must account for each received attachment exactly once.')
         for reading in v.documents:
@@ -226,7 +227,13 @@ class Analyser:
         elif v.review_reason is not None:
             raise ValueError('AI result contains a contradictory review reason.')
         pair = [[d for d in infos if d.detected_type==role and d.readable] for role in ('SI','BL')]
-        if v.status in ('OK','MISMATCH') and (any(not d.readable for d in docs) or any(len(x)!=1 for x in pair)):
+        # A request to send the draft BL arrives with no attachments at all, so the
+        # "one readable SI and one readable BL" requirement cannot apply to it: there is
+        # nothing to compare yet. Only an OK on an entirely empty attachment list qualifies -
+        # anything that carries files must still produce a real, readable pair.
+        awaiting_draft = v.status == 'OK' and not docs and intent == 'request_draft'
+        if not awaiting_draft and v.status in ('OK','MISMATCH') and (
+                any(not d.readable for d in docs) or any(len(x)!=1 for x in pair)):
             raise ValueError('AI successful comparison requires one readable SI and one readable BL.')
         if not all(len(x)==1 for x in pair):
             if v.comparisons:

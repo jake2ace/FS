@@ -506,6 +506,14 @@ vision-capable model for scanned and image-only pages.
 **A real inbox.** Replace the static participant bundle with IMAP or Microsoft Graph so the system reads
 the operations mailbox directly instead of a delivered dataset.
 
+**Bringing your own emails.** The inbox is the delivered dataset and the interface offers no way to add
+to it: a team cannot point this at a backlog of their own without editing files on the server. The work
+is an upload path - .eml files or a folder dropped into the browser, validated, written to the disk the
+service now has, and parsed through exactly the same attachment pipeline the bundle goes through - plus
+a way to keep separate sets apart so one upload does not overwrite another. It sits here rather than in
+this build because the round is scored on the supplied 520 emails: an upload feature adds no evidence
+for that, and a half-finished one would add risk to the part that is actually assessed.
+
 **Learning from the review queue.** Every human correction already records the confirmed category,
 outcome, defect fields and a note. Feeding those back as evaluation cases turns the review queue into
 a regression suite that grows as the system is used.

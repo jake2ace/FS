@@ -141,9 +141,18 @@ allows neither a different method nor custom accepted status codes, so the fix h
 which is a real risk during a live demo. UptimeRobot now pings every 5 minutes; the free tier's 750
 instance-hours per month is enough to cover this.
 
-**`CACHE_DIR` must never reach the cloud.** Locally it is an absolute macOS path; setting it on
-Render breaks startup. `render.yaml` pins 19 environment variables and deliberately omits this one,
-with a comment explaining why.
+**`CACHE_DIR` went from "never set this" to "you must set this".** Locally it is an absolute macOS
+path, so setting it on Render broke startup, and `render.yaml` deliberately omitted it. Attaching a
+persistent disk reversed that: results now have to be written inside the mount or a restart wipes
+them, so the variable became mandatory as `/var/data/cache`.
+
+The reversal was not the painful part. Changing it and having nothing happen was. Blueprint
+environment variables are read when the service is **created**; editing `render.yaml` afterwards and
+pushing deploys the code and leaves the variables alone. Render reported a healthy deploy while
+`BATCH_CONCURRENCY` still held its old value and `CACHE_DIR` did not exist at all. Nothing looked
+wrong except the wall-clock time. We found it by arithmetic: a measured 0.69 model calls per second
+implies a concurrency of about 4, not the 32 we thought we had shipped. Both variables had to be
+entered by hand in Render's Environment panel.
 
 **Too many variables for a teammate to configure by hand.** Solved with a Render Blueprint: every
 value is pinned in `render.yaml` and only `AI_API_KEY` is marked `sync: false` for manual entry. One
@@ -231,7 +240,84 @@ on both providers, and decide from the numbers rather than from preference.
 
 ---
 
-## 6. What actually worked
+## 6. Throughput: 16 minutes to 3.5, and why we stopped there (2026-09-22)
+
+**Why it mattered.** A competing entry claimed three seconds over the same 520 emails. Their
+repository shows a deterministic, template-driven pipeline - no model call per email, so of course it
+is fast. Every business verdict here comes from a model and there is no rule-based fallback, so that
+order of magnitude was never available to us. But sixteen minutes was genuinely too slow: the demo
+video is five minutes long.
+
+**Three measurements.**
+
+| Configuration | Concurrency | Wall clock |
+|---|---|---|
+| Render free tier (0.1 CPU / 512 MB) | 4 | 16 min 24 s |
+| Standard (1 CPU / 2 GB) + 1 GB disk | 32 | **3 min 39 s** |
+| Same instance | 64 | **3 min 30 s** |
+
+The first step was a 4.5x speed-up. The second was 4%. Doubling the concurrency did almost nothing,
+and that is the finding the rest of this section explains.
+
+**What the instance was doing.** Render's metrics over a 30-minute window covering those runs:
+
+| Metric | Observed | Limit |
+|---|---|---|
+| Memory | ~20% peak | 2 GB |
+| CPU | ~5% baseline, 45% and 60% peaks | 1 CPU |
+| Disk | ~1% | 1 GB |
+| Requests | 1,509 in 30 min, CPU still at baseline | - |
+
+A 5% CPU baseline means the machine is not computing for most of a run - it is waiting on the
+provider. Memory never came within a factor of four of its limit. The instance was never the
+constraint, so adding concurrency only adds more requests waiting at the same time.
+
+**Why the last twenty emails take longer than the first five hundred.** Around 474 of the 520 need a
+single model call, roughly nine seconds each. About 46 escalate and need a second one: the senior
+review, with `thinking=true` and `reasoning_effort=max`. The semaphore is held for the **whole
+email**, primary call and senior call together, because that chain is sequential.
+
+At concurrency 64 all 46 escalations run at once, so the floor on the whole run is the slowest single
+email: one primary call plus one senior call. A sequential chain cannot be parallelised against
+itself, so no concurrency setting goes below it. At 3 min 30 s we are roughly 30 seconds above that
+floor.
+
+The stragglers are precisely the 20 cases that stay `NEEDS_REVIEW` - the ones the senior review could
+not settle either, which are by construction the ones it deliberates on longest. The slow tail is not
+a defect; it is what the second opinion costs.
+
+**An option we examined and rejected.** Keeping `reasoning_effort=max` and turning
+`AI_SENIOR_THINKING` off. Reading the code showed that setting does not exist:
+
+```python
+payload["thinking"] = {"type": "enabled" if self.thinking else "disabled"}
+if self.thinking:                                       # only inside here
+    payload['reasoning_effort'] = self.reasoning_effort  # is max ever sent
+```
+
+`reasoning_effort` is only sent to DeepSeek when thinking is enabled. Turning thinking off makes
+`max` silently dead configuration and reduces the senior review to an ordinary non-reasoning call -
+no longer a second opinion of a different quality, just the same dice rolled again behind a different
+prompt. That is the entire point of the two-stage design, so the option was rejected.
+
+**The conclusion: the next speed-up is a different model, not a different setting.** What remains is
+almost entirely the senior review's deliberation loop, and there are only two ways to shorten it:
+lower `reasoning_effort`, which makes it think less and lowers the quality of the second opinion, or
+move to a more capable model that does not **need** to think as long to reach the same quality. Only
+the second shortens the loop without undermining the premise, which makes upgrading the review model
+the real next step rather than further parameter tuning. The Gemini 3.8 Flash attempt in section 5
+was exactly that, and failed on the provider's side rather than on ours.
+
+Both changes would alter the verdicts on those 20 boundary cases, so either one requires a full
+re-run and a re-check of every published number. That is why both were deferred past the deadline.
+
+**One thing confirmed along the way.** The persistent disk was verified by restarting the service:
+all 520 results survived. The return on the Standard tier is not speed - model latency sets that -
+it is that a restart during the judging window does not leave a judge looking at an empty dashboard.
+
+---
+
+## 7. What actually worked
 
 1. **Group before locating.** The 91 misjudged emails were not found one by one. Grouping the bodies
    by template made it obvious they were one problem, which led straight to the offending sentence.
@@ -255,9 +341,16 @@ on both providers, and decide from the numbers rather than from preference.
 | Senior review | `deepseek-flash`, `thinking=true`, `reasoning_effort=max` |
 | Escalation trigger | only when `status == NEEDS_REVIEW` |
 | Frontend | Next.js 14.2.15 / React 18.3.1 / TypeScript 5.5.4 on Vercel |
-| Backend | FastAPI + uvicorn, Python 3.11.9, on Render's free tier |
+| Backend | FastAPI + uvicorn, Python 3.11.9, on Render Standard (1 CPU / 2 GB) |
+| Persistence | 1 GB disk mounted at `/var/data`, `CACHE_DIR=/var/data/cache` (verified by restart) |
+| Batch concurrency | `BATCH_CONCURRENCY=64` |
 | Keep-alive | UptimeRobot, 5-minute interval |
 
 Most recent full run: 520 emails analysed, 220 document comparisons, 63 safely auto-completed,
-46 mismatches, 20 needing human review, 91 draft-BL requests, 0 failures; 16 min 55 s wall clock;
-740 primary calls with 0 failures, 44 senior calls with 4 failures.
+46 mismatches, 20 needing human review, 91 draft-BL requests, 0 failures; 3 min 39 s at concurrency
+32 and 3 min 30 s at 64; 740 primary calls with 2 failures (non-JSON, succeeded on retry), 46 senior
+calls with 0 failures.
+
+The review-reason split moves slightly between runs on the boundary cases - most recently
+`missing_attachment` 6 / `missing_value` 5 / `unreadable` 5 / `wrong_doc_type` 4, where earlier runs
+gave 5/5/5/5. What does not move is 520 / 220 / 20.

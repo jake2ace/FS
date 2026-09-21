@@ -17,6 +17,52 @@ value) goes to a person with the reason, never a guess.
 Official Inbox -> Smart Inbox (classify) -> Analyse (extract + compare) -> Risk Radar -> Review or Safe Completion
 ```
 
+## Start here
+
+**Nothing needs to be installed or run.** The deployed instance has already analysed all 520 emails from
+the participant bundle, and the results are on screen when the page opens.
+
+| | |
+|---|---|
+| Try it | **https://fs-two-sand.vercel.app/** |
+| API | https://freightsentinel-api.onrender.com/health |
+| Language | the switcher in the top right does English / 中文 |
+
+A sixty-second tour:
+
+1. **[Today Work Centre](https://fs-two-sand.vercel.app/)** - the counts, and underneath them the cases
+   already sorted with the most urgent first. The strip at the top says what to do next.
+2. **Open the first mismatch** from *Risk Radar*. The seven fields are laid out side by side, SI on the
+   left and draft BL on the right, and every reading carries the exact line it was taken from. Tick
+   *show source lines* to see them.
+3. **[Review Queue](https://fs-two-sand.vercel.app/review)** - everything waiting on a person: the
+   confirmed mismatches, and the cases the system refused to decide with the reason attached. The second
+   group is where the system says "I don't know" instead of guessing.
+4. **[Batch Run](https://fs-two-sand.vercel.app/runs)** - the record of the full 520-email run and the
+   official export.
+
+**The first page load may take up to a minute.** The backend is on a free instance that sleeps when idle;
+once it is awake the app is immediate.
+
+### Running it yourself
+
+**This repository contains no API key, and it cannot contain one.** A local clone will start, serve the
+interface and read the bundled emails, but every classification and comparison will fail with a visible
+technical error until you put your own provider key in `backend/.env`:
+
+```dotenv
+AI_PROVIDER=deepseek
+AI_API_KEY=<your own DeepSeek key>
+AI_MODEL=deepseek-flash
+```
+
+That is deliberate: the key is a server-side secret, it is never committed, never sent to the browser and
+never printed in a log. The full variable list is in [Environment variables](#environment-variables), and
+[Run locally](#run-locally) has the commands.
+
+**If you want to see the system working, use the deployed link above** - it is already configured and
+already has the results.
+
 ## Architecture
 
 ```
@@ -59,7 +105,8 @@ Three cloud services, each doing work the product cannot do without.
 if the provider is unreachable the case becomes a visible technical failure and goes to a person. There
 is no local path that produces a verdict. The tiered escalation is likewise a cloud design - two model
 configurations at different reasoning depths, with the second one called only when the first declines to
-decide, so cost is spent on the 6 % of cases that need it (44 senior calls against 740 primary ones) rather than on all 520.
+decide. In the latest full run that was 42 senior calls against 742 primary ones, so the deeper, slower
+configuration is paid for only where the first pass stopped, not across all 520 emails.
 
 **Infrastructure as code.** `render.yaml` pins 19 environment variables - provider, both model tiers,
 thinking effort, timeouts, rate limits, fallback behaviour and batch concurrency. Deploying asks for
@@ -84,7 +131,7 @@ effects. They are listed here with the specific change each one needs.
 
 | Limit | Effect today | Next step |
 |---|---|---|
-| Ephemeral disk | Analysis results do not survive a restart or a redeploy | The whole store is a single atomically written `results.json`. Snapshotting it to object storage on flush and restoring it at boot needs one credential and no schema change; a managed Postgres becomes worthwhile only once there are multiple teams to isolate. |
+| Ephemeral disk | Results, history, generated BL copies and files a person added do not survive a restart or a redeploy | The designed next step is a verified snapshot of all four to private object storage, restored and checked before a new instance serves requests. It is **designed, not built** - see the roadmap. Managed Postgres comes after that. |
 | 512 MB memory | `BATCH_CONCURRENCY` is pinned to 4 while several PDFs are parsed at once | The same pipeline over the same 520 emails finished in 10 min 6 s at concurrency 8 on a larger machine. Throughput is a paid instance plus a higher provider rate limit, not an application change. |
 | 15-minute sleep | Cold starts look like a broken prototype | Mitigated by the uptime monitor today; a paid instance removes it. |
 
@@ -434,10 +481,15 @@ decisions, an administrator who can change configuration), rate limiting on writ
 who changed what and when. The read endpoints should not be open to everyone either: they contain
 customer names, cargo and ports.
 
-**Human decisions in a real database.** Results and history are written to Render's ephemeral disk today
-and do not survive a restart. Managed Postgres is what lets history, the audit trail and human
-conclusions outlive a restart - and it is also where the access control system above has to store its
-users and roles.
+**State that survives a restart.** Results and history are written to Render's ephemeral disk today and
+do not survive a restart or a redeploy. Two steps are designed and not built. The first is a snapshot of
+the working state - the store, the generated BL copies and the files a person added - captured
+consistently, uploaded to private object storage, and verified file by file before a new instance is
+allowed to restore from it and serve requests; a pointer object updated with a conditional write is what
+stops an old instance from overwriting a newer state. The second is managed Postgres, which is what
+history, the audit trail and human conclusions really want, and where the access control system above has
+to keep its users and roles. Both are out of scope for the preliminary round on purpose: they change how
+the service starts up, and a half-finished version of that is worse than the honest limitation.
 
 **Reading harder documents.** Install Tesseract and Poppler on the backend host to enable the bounded
 local OCR recovery the pipeline already implements but cannot currently use on Render, and evaluate a

@@ -315,11 +315,10 @@ produced before draft-BL action requests were separated in the UI.
 | Current cloud run | Result |
 |---|---|
 | Emails processed | 520 / 520 |
-| Wall time | 16 min 55 s (concurrency 4) |
+| Wall time | 16 min 24 s (concurrency 4) |
 | Batch failures | **0** |
-| Primary AI calls | 740 |
-| Senior-review calls | 44 |
-| Senior-review technical failures | **4** |
+| Primary AI calls | 742, **0 failures** |
+| Senior-review calls | 42, 1 technical failure (token limit) |
 | Non-comparison emails (classified only) | 300 |
 | Safe completed comparisons | 63 |
 | Draft BL requested action items | 91 |
@@ -331,16 +330,23 @@ comparisons + 91 draft-BL action requests + 46 mismatches + 20 review cases. Acr
 official export, including the 300 non-comparison emails, the status distribution is 454 `OK`,
 46 `MISMATCH`, and 20 `NEEDS_REVIEW`.
 
-Current review reasons are `unreadable` 9, `wrong_doc_type` 5, `missing_attachment` 4, and
-`missing_value` 2. Four of those reasons are known to be routed incorrectly after senior-review
-technical failures: `email_507` should retain `missing_attachment`; `email_516`, `email_518`, and
-`email_520` should retain `missing_value`. They are recorded here rather than presented as verified
-business accuracy.
-The cause has since been fixed: a senior call that fails for technical reasons no longer replaces the
-verdict the primary model already produced. The snapshot above predates that fix.
+The 20 review cases divide evenly across the four allowed reasons: `wrong_doc_type` 5,
+`missing_attachment` 5, `unreadable` 5, `missing_value` 5.
+
+An earlier snapshot of this run had them at 9 / 5 / 4 / 2, because a senior-review call that failed for
+technical reasons replaced the verdict the primary model had already produced with the generic
+`unreadable` handoff. A technical failure is not a business finding, so the escalation path now keeps the
+primary finding and records the senior failure alongside it. `email_507` is the case that still hits a
+senior token-limit failure in this run: it keeps `missing_attachment` from the primary pass and carries
+the warning *"Senior review did not complete ... The primary finding was kept."* The regression is covered
+by `backend/tests/test_senior_handoff.py`.
+
+We have never opened the organisers' answer key, so an even 5 / 5 / 5 / 5 split is not proof of
+correctness - but it is the shape a deliberately constructed edge-case set would have, and the lopsided
+split was what first pointed at the bug.
 
 **Throughput and concurrency.** The run is bounded by model latency, not by application code. 784 model
-calls in 16 min 55 s is about 0.8 calls per second, and the backend spends nearly all of that waiting on
+calls in 16 min 24 s is about 0.8 calls per second, and the backend spends nearly all of that waiting on
 the provider. `BATCH_CONCURRENCY` is the single dial: the same pipeline over the same 520 emails finished
 in 10 min 6 s at concurrency 8 on a development machine. It is pinned to 4 on Render's free instance to
 stay inside a 512 MB memory budget while several PDFs are parsed at the same time. A paid instance, or a

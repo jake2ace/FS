@@ -140,8 +140,10 @@ async def _analyse_and_store(email: dict, explain_with_ai: bool = False) -> Case
 
 # ---------------------------------------------------------------- health
 
-@app.get("/health")
-@app.get("/api/health")
+# HEAD as well as GET: uptime monitors send HEAD by default, and FastAPI's @app.get
+# would answer those with 405, which reads as an outage on the monitor.
+@app.api_route("/health", methods=["GET", "HEAD"])
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
     return {
         "status": "ok",

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { CategoryBadge, StatusBadge } from '@/components/StatusBadge';
 import { api, post, pct, type EmailRow } from '@/lib/api';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 
 const PAGE = 50;
 
@@ -30,6 +31,7 @@ export default function SmartInbox() {
   useEffect(() => {
     load();
   }, []);
+  useLiveRefresh(load);
 
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();

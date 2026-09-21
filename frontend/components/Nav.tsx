@@ -30,7 +30,10 @@ export default function Nav() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 30000);
+    // /api/health is a dictionary of counters, not a query - cheap enough to watch
+    // closely. It is the only live signal on pages that are not the run page, and a
+    // counter that sits still for half a minute reads as a broken app.
+    const t = setInterval(load, 2500);
     return () => clearInterval(t);
   }, []);
 

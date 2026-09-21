@@ -30,7 +30,9 @@ export default function BatchRun() {
   const active = runs.find((r) => r.status === 'running');
   useEffect(() => {
     if (!active) return;
-    const t = setInterval(load, 1500);
+    // Fast while something is moving, relaxed once it is not: this page is often the
+    // one left open on a second screen during judging.
+    const t = setInterval(load, active ? 1500 : 6000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!active]);
@@ -84,6 +86,17 @@ export default function BatchRun() {
           {latest ? (
             <>
               <div className="progress" style={{ margin: '8px 0' }}><div style={{ width: `${latest.total ? Math.round((latest.done / latest.total) * 100) : 0}%` }} /></div>
+              {latest.status === 'running' ? (
+                // The bar spends its last stretch looking stuck, and an unexplained stall
+                // reads as a crash. It is not one: the cases still running are the ones the
+                // first model would not settle alone, and the senior pass deliberately
+                // thinks for longer. Saying so turns dead time into the thing worth watching.
+                <p className="small muted" style={{ margin: '0 0 10px' }}>
+                  {latest.total - latest.done} still running. The stragglers are the cases that
+                  went to senior review - that pass thinks for longer on purpose, so the last
+                  few take far longer than the first few hundred.
+                </p>
+              ) : null}
               <div className="run-split">
                 <dl className="kv">
                   <dt>Status</dt><dd>{latest.status}{latest.current ? ` · analysing ${latest.current}` : ''}</dd>

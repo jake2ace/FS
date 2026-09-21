@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { api, post, pct, REVIEW_LABEL, type EmailRow } from '@/lib/api';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 
 const RISK_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2, none: 3 };
 
@@ -23,6 +24,7 @@ export default function ReviewQueue() {
   useEffect(() => {
     load();
   }, []);
+  useLiveRefresh(load);
 
   const list = useMemo(() => {
     const bl = rows;

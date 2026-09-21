@@ -3,6 +3,8 @@
 **Shipping document verification - from a shared inbox to a discrepancy report.**
 Built for the Averis x Monash Hackathon 2026 (Shipping Document Verification use case).
 
+**Live prototype:** https://fs-two-sand.vercel.app/
+
 > 中文版说明见 **[README.zh-CN.md](README.zh-CN.md)**（部署步骤与环境变量中文对照）。
 
 FreightSentinel reads the shared operations inbox, tells the five kinds of emails apart, and for every
@@ -208,6 +210,11 @@ change the value in Render and redeploy; nothing in the repository or the fronte
 A blank or invalid value is not a discrepancy. All seven comparisons must complete reliably before an
 OK or MISMATCH is returned. Unknown document roles are never inferred from filenames alone.
 
+> **Current deployment note (2026-09-21).** The live UI separates 91 `request_draft` emails into an
+> operational "Draft BL requested" action list and currently exports them as `BL_COMPARISON` + `OK`.
+> This is an interim product treatment. It still needs to be reconciled with the official output
+> contract above before the final submission run.
+
 The confirmed workflow is in [the flowchart](docs/FreightSentinel-确认版流程图.html), with a
 [scalable SVG](docs/FreightSentinel-确认版流程图.svg) and the
 [workflow contract](docs/确认版流程说明.md).
@@ -253,27 +260,34 @@ not part of this repository.
 
 ## Validation evidence
 
-Two independent full-inbox runs of the same pipeline and the same configuration, on different
-machines, produced nearly identical results.
+The current cloud snapshot below was verified on 2026-09-21 through the deployed stack:
+browser → Vercel → Render → DeepSeek. It supersedes the earlier 61 / 48 / 111 snapshot, which was
+produced before draft-BL action requests were separated in the UI.
 
-| | Local (2026-09-20) | Cloud — Render (2026-09-21) |
-|---|---|---|
-| Emails processed | 520 / 520 | 520 / 520 |
-| Wall time | 606 s (concurrency 8) | 20 min 27 s (concurrency 4) |
-| Real API calls | 966 (740 primary + 226 senior) | 962 (740 primary + 222 senior) |
-| Technical failures | 0 | **0** |
-| Non-comparison emails (classified only) | 300 | 300 |
-| `OK` | 60 | 61 |
-| `MISMATCH` | 49 | 48 |
-| `NEEDS_REVIEW` | 111 | 111 |
+| Current cloud run | Result |
+|---|---|
+| Emails processed | 520 / 520 |
+| Wall time | 16 min 55 s (concurrency 4) |
+| Batch failures | **0** |
+| Primary AI calls | 740 |
+| Senior-review calls | 44 |
+| Senior-review technical failures | **4** |
+| Non-comparison emails (classified only) | 300 |
+| Safe completed comparisons | 63 |
+| Draft BL requested action items | 91 |
+| `MISMATCH` | 46 |
+| `NEEDS_REVIEW` | 20 |
 
-**One email out of 520 decided differently between the two runs.** Classification of the 300
-non-comparison emails was identical. The cloud run is the deployed stack end to end: browser →
-Vercel → Render → DeepSeek.
+The 220 emails currently classified as `BL_COMPARISON` therefore appear in the UI as 63 safe
+comparisons + 91 draft-BL action requests + 46 mismatches + 20 review cases. Across the complete
+official export, including the 300 non-comparison emails, the status distribution is 454 `OK`,
+46 `MISMATCH`, and 20 `NEEDS_REVIEW`.
 
-Review reasons in the cloud run: `missing_attachment` 96, `unreadable` 6, `wrong_doc_type` 5,
-`missing_value` 4 — 111 in total, matching the `NEEDS_REVIEW` count exactly. `has_defect: true`
-appears on exactly the 48 `MISMATCH` cases.
+Current review reasons are `unreadable` 9, `wrong_doc_type` 5, `missing_attachment` 4, and
+`missing_value` 2. Four of those reasons are known to be routed incorrectly after senior-review
+technical failures: `email_507` should retain `missing_attachment`; `email_516`, `email_518`, and
+`email_520` should retain `missing_value`. They are recorded here rather than presented as verified
+business accuracy.
 
 `GET /api/submission` was checked field by field against the organisers' `sample_submission.json`:
 520 keys, no gaps or extras, the same five fields on every record, same types.
@@ -285,19 +299,16 @@ key was read, and the known issues below are unresolved.
 
 ## Challenges faced
 
-**Field labels versus field values.** Three emails (383, 411, 498) were reported as a consignee
-mismatch where the SI says `To the Order of:` and the BL says `Consignee:` with the same company and
-address. The model treated a difference in wording of the label as a substantive difference in the
-value. The brief requires aligning the same field across different labels, so these are suspected
-false positives. They are recorded rather than quietly corrected: the first-pass answers were
-confident, so the senior stage — which only reviews uncertain cases — never saw them. **More thinking
-effort does not remove a confident wrong answer.**
+**Field labels versus field values — resolved in the current run.** Emails 383, 411 and 498 previously
+treated `To the Order of:` versus `Consignee:` as a value mismatch even though the underlying company
+was identical. The current deployed run classifies all three as `OK` and explains that the label wording
+differs while the party value agrees.
 
-**A technical failure must not overwrite a valid finding.** On two emails the senior pass ran ~150 s
-and exceeded the 32,768-token output limit, returning nothing usable. The case was correctly sent to
-a human, but the handoff replaced the first pass's accurate `missing_value` with a generic
-`unreadable`, making the reason wrong and losing the structured readings. Escalating safely is not
-enough if the escalation destroys what was already known.
+**A technical failure must not overwrite a valid finding — still open.** Four senior-review calls in
+the current cloud snapshot exceeded the model output limit. The cases were sent to a person, but the
+handoff replaced a more accurate primary finding with generic `unreadable` on `email_507`,
+`email_516`, `email_518`, and `email_520`. Escalating safely is not enough if the escalation destroys
+what was already known.
 
 **Refusing to guess is a feature, not an error path.** Invalid JSON, quoted evidence that cannot be
 found in the source, incomplete field sets — each is rejected by validation and sent to review with
@@ -323,10 +334,9 @@ instance.
 
 ## Future roadmap
 
-**Correctness first.** Define the boundary between a field's label and its value in the prompt, and
-re-test against the three suspected false positives before anything else. Keep the first pass's valid
-findings when the senior pass fails technically, and show the technical failure as its own reason
-instead of overwriting a good one.
+**Correctness first.** Reconcile the 91 `request_draft` action items with the official output contract.
+Keep the first pass's valid findings when the senior pass fails technically, and show the technical
+failure separately instead of overwriting a correct `missing_attachment` or `missing_value` reason.
 
 **Reading harder documents.** Install Tesseract and Poppler on the backend host to enable the bounded
 local OCR recovery the pipeline already implements but cannot currently use on Render, and evaluate a

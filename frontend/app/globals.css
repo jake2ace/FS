@@ -264,6 +264,3 @@ details summary { cursor: pointer; font-weight: 600; }
 
 /* Run history grows without bound, so it scrolls inside its card and the
    sticky header keeps the columns readable while scrolling. */
-.run-history { max-height: 320px; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
-.run-history table { margin-top: 0; }
-.run-history thead th { position: sticky; top: 0; background: var(--card); z-index: 1; }

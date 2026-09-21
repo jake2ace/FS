@@ -138,21 +138,24 @@ export default function BatchRun() {
           <div className="card">
             <div className="card-head">
               <h2>Previous runs</h2>
-              {runs.length > 1 ? <span className="small muted">{runs.length - 1} earlier</span> : null}
+              {runs.length > 1 ? (
+                <span className="small muted">
+                  {runs.length - 1 > 3 ? `latest 3 of ${runs.length - 1}` : `${runs.length - 1} earlier`}
+                </span>
+              ) : null}
             </div>
             {runs.length <= 1 ? <p className="muted small">None.</p> : (
-              // The history grows with every run, so it scrolls inside the card
-              // instead of stretching the page past the run it belongs next to.
-              <div className="run-history">
-                <table>
-                  <thead><tr><th>Run</th><th>Status</th><th className="right">Done</th><th className="right">Mismatch</th><th className="right">Review</th></tr></thead>
-                  <tbody>
-                    {runs.slice(1).map((r) => (
-                      <tr key={r.run_id}><td className="mono">{r.run_id}</td><td>{r.status}</td><td className="right">{r.done}/{r.total}</td><td className="right">{r.mismatch}</td><td className="right">{r.needs_review}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              // Only the three most recent runs are shown. The history grows with every run,
+              // and a card that either stretches down the page or scrolls inside itself reads as
+              // clutter next to the run it belongs to. The count in the header says how many exist.
+              <table>
+                <thead><tr><th>Run</th><th>Status</th><th className="right">Done</th><th className="right">Mismatch</th><th className="right">Review</th></tr></thead>
+                <tbody>
+                  {runs.slice(1, 4).map((r) => (
+                    <tr key={r.run_id}><td className="mono">{r.run_id}</td><td>{r.status}</td><td className="right">{r.done}/{r.total}</td><td className="right">{r.mismatch}</td><td className="right">{r.needs_review}</td></tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
           <p className="footer-note">Results live in the backend cache; <Link href="/review">open the review queue</Link> once the run finishes.</p>

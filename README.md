@@ -400,8 +400,14 @@ comparisons + 91 draft-BL action requests + 46 mismatches + 20 review cases. Acr
 official export, including the 300 non-comparison emails, the status distribution is 454 `OK`,
 46 `MISMATCH`, and 20 `NEEDS_REVIEW`.
 
-The 20 review cases divide evenly across the four allowed reasons: `wrong_doc_type` 5,
-`missing_attachment` 5, `unreadable` 5, `missing_value` 5.
+The 20 review cases spread across all four allowed reasons. The most recent full run put them at
+`missing_attachment` 6, `missing_value` 5, `unreadable` 5, `wrong_doc_type` 4; earlier runs of the same
+pipeline over the same inbox produced 5 / 5 / 5 / 5. We report that drift rather than quote whichever
+number looks tidiest. It is real, it is small, and it has a cause: a few of these emails sit genuinely on
+the boundary between two reasons - an attachment that arrived but cannot be read, a field that is absent
+rather than contradictory - and a language model asked to choose one label will not always choose the same
+one. What has been stable across every run is the part that carries weight: 520 analysed, 220 comparisons,
+and 20 cases held back for a human.
 
 An earlier snapshot of this run had them at 9 / 5 / 4 / 2, because a senior-review call that failed for
 technical reasons replaced the verdict the primary model had already produced with the generic
@@ -411,16 +417,19 @@ senior token-limit failure in this run: it keeps `missing_attachment` from the p
 the warning *"Senior review did not complete ... The primary finding was kept."* The regression is covered
 by `backend/tests/test_senior_handoff.py`.
 
-We have never opened the organisers' answer key, so an even 5 / 5 / 5 / 5 split is not proof of
-correctness - but it is the shape a deliberately constructed edge-case set would have, and the lopsided
-split was what first pointed at the bug.
+We have never opened the organisers' answer key, so no distribution here is proof of correctness. What
+it does show is that no single reason dominates, which is the shape a deliberately constructed edge-case
+set would have - and it was the lopsided 9 / 5 / 4 / 2 split that first pointed at the bug above.
 
-**Throughput and concurrency.** The run is bounded by model latency, not by application code. 784 model
-calls in 16 min 24 s is about 0.8 calls per second, and the backend spends nearly all of that waiting on
-the provider. `BATCH_CONCURRENCY` is the single dial: the same pipeline over the same 520 emails finished
-in 10 min 6 s at concurrency 8 on a development machine. It is pinned to 4 on Render's free instance to
-stay inside a 512 MB memory budget while several PDFs are parsed at the same time. A paid instance, or a
-provider tier with a higher rate limit, raises throughput without touching any application code.
+**Throughput and concurrency.** The run is bounded by model latency, not by application code. The full
+inbox - 520 emails, 786 model calls - completes in 3 min 39 s, and the backend spends almost all of that
+time waiting on the provider. `BATCH_CONCURRENCY` is the single dial, and it is the reason the deployment
+looks the way it does: at concurrency 4 on a 512 MB free instance the same run took 16 min 24 s, because
+memory could not hold many simultaneous PDF parses. On the Standard instance the dial is at 32 - a 4.5x
+speed-up with no change to any application code. Attachment parsing is dispatched to a thread pool rather
+than run on the event loop, so raising the dial buys real parallelism instead of queueing work behind one
+parse. Speed is not a scoring criterion; it matters here because a 520-email inbox has to be demonstrable
+inside a five-minute video.
 
 `GET /api/submission` was checked field by field against the organisers' `sample_submission.json`:
 520 keys, no gaps or extras, the same five fields on every record, same types.

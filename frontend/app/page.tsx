@@ -55,7 +55,7 @@ export default function TodayWorkCentre() {
         <div className="card tile risk"><div className="tile-label">High risk</div><div className="tile-value">{s.high_risk}</div><div className="tile-hint">mismatch between SI and draft BL</div></div>
         <div className="card tile warn"><div className="tile-label">Needs review</div><div className="tile-value">{s.needs_review}</div><div className="tile-hint">missing / unreadable / blank</div></div>
         <div className="card tile safe"><div className="tile-label">Safe completed</div><div className="tile-value">{s.safe_completed}</div><div className="tile-hint">auto-completed under {s.policy} policy</div></div>
-        <div className="card tile"><div className="tile-label">Awaiting draft BL</div><div className="tile-value">{s.awaiting_draft}</div><div className="tile-hint">requests with nothing to compare yet</div></div>
+        <div className="card tile"><div className="tile-label">Pending approval</div><div className="tile-value">{s.pending_approval}</div><div className="tile-hint">rechecked revisions awaiting a person</div></div>
         <div className="card tile"><div className="tile-label">Not analysed</div><div className="tile-value">{s.not_analysed}</div><div className="tile-hint">of {s.total_emails} emails in the inbox</div></div>
       </div>
 
@@ -90,7 +90,7 @@ export default function TodayWorkCentre() {
         <div>
           <div className="card">
             <h2>Automation policy</h2>
-            <p><span className="badge badge-info">{data.policy.name === 'strict' ? 'Strict' : 'Standard'}</span> <span className="muted small">auto-complete threshold {Math.round(data.policy.auto_complete_threshold * 100)}%</span></p>
+            <p><span className="badge badge-info">{data.policy.name === 'strict' ? 'Strict' : 'Standard'}</span> <span className="muted small">AI decides; source evidence checked</span></p>
             <p className="small muted">{data.policy.description}</p>
             <p className="small">Switch the policy from the top bar. Mismatches and uncertain cases are never auto-completed.</p>
           </div>
@@ -114,7 +114,7 @@ export default function TodayWorkCentre() {
             {data.ai?.enabled ? (
               <p className="small">Provider <strong>{data.ai.provider}</strong> ({data.ai.model}) · {data.ai.calls} calls · {data.ai.failures} failures</p>
             ) : (
-              <p className="small muted">No AI provider configured on the backend - the deterministic rule engine is doing classification and extraction on its own.</p>
+              <p className="small muted">AI is unavailable. Configure the provider before analysis; no rule-based fallback is used.</p>
             )}
           </div>
         </div>

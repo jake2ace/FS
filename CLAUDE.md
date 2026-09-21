@@ -1,49 +1,46 @@
-# CLAUDE.md - working notes for AI coding assistants on this repo
+# FreightSentinel working instructions
 
-FreightSentinel = hackathon prototype (Averis x Monash Hackathon 2026, "Shipping document verification").
-Team of three beginners; the code is AI-written and human-verified. Preliminary submission deadline:
-**22 Sep 2026 12:00 MYT**. Keep changes small, keep the app runnable at every step.
+Hackathon project in this folder. Keep changes within the user's confirmed workflow.
 
-## What exists (verified)
-- `backend/` FastAPI. `app/pipeline.py` is the heart: classify -> parse attachments -> extract 7 fields ->
-  compare -> OK / MISMATCH / NEEDS_REVIEW -> explain. Rule engine works with **no AI key**; AI (OpenAI /
-  Anthropic / Gemini via plain HTTPS in `app/ai.py`) is layered on top and cross-checked by the rules.
-- Verified on the official bundle (520 emails): category mix matches the bundle README exactly
-  (200 / 125 / 75 / 60 / 40), all 109 main-set SI+BL pairs extract all seven fields (txt / pdf / docx /
-  xlsx), the 20 edge cases (email_501-520) return the documented review_reason (5 x 4). `backend/tests/`
-  pins this - run `pytest -q` before every push.
-- `frontend/` Next.js 14 App Router, TypeScript, plain CSS (`app/globals.css`). Pages: `/` Today Work
-  Centre, `/inbox` Smart Inbox, `/cases/[id]` Case Detail, `/review` Review Queue, `/runs` Batch Run.
-  All pages are client components calling same-origin `/api/*`; `next.config.mjs` rewrites them to
-  `BACKEND_URL`. The frontend was type-checked but has **not yet been built with `next build`** - do that
-  first and fix whatever the compiler reports.
-- `data/sdoc-hackathon-bundle.zip` is the official participant bundle; the backend extracts it to
-  `backend/.data/` at startup. Results are cached in `backend/.cache/results.json`.
+## Current user decision (2026-09-20)
 
-## Rules that must not change
-- Categories, statuses, review reasons and the submission shape are fixed by the organisers
-  (see `backend/app/schemas.py`, `backend/app/submission.py`, and `data/.../README.md`).
-- The SI is the reference. A blank value is NOT a mismatch (-> NEEDS_REVIEW / missing_value). A mismatch
-  is never auto-corrected. The correction email is a draft only; nothing is ever sent.
-- Any mismatch / missing / unreadable / uncertain case must end in human review; only complete, matching,
-  high-confidence cases may auto-complete (see `Analyser._finish`).
-- API keys live only in backend environment variables (Render). Never in the frontend, README, logs or git.
-- Never read or use the organisers' answer key (`ground_truth.json` in the Docker package) or its generator.
-  Only `POST /submit` of the local Docker server may be used to score `GET /api/submission`.
+**AI owns ALL business judgements**: classification, document identity, seven-field extraction,
+semantic/unit comparison and OK/MISMATCH/NEEDS_REVIEW. Primary uncertainty goes once to the
+configured senior AI, then to human handling. A human decision is final. Never restore rule-based business judgement.
 
-## Conventions
-- Python 3.11, type hints, Pydantic models in `schemas.py`; keep `main.py` thin (routes call pipeline/store).
-- Deterministic behaviour first; every AI call must have a rule-based fallback and a timeout.
-- UI language is English, formal, navy/white/grey; red = real risk only, amber = needs attention,
-  green = safe completion. No chat-bot styling.
-- Commit messages: short imperative English.
+- `app/pipeline.py` loads files and accepts structured AI verdicts from `app/ai.py`.
+- Program validation is limited to schema, supplied document indexes, source excerpt presence,
+  complete fields and consistency of the model's own match/status/defect list.
+- API failure is a visible failure, not a fabricated category/OK. Invalid returned evidence or
+  structure is response_validation/NEEDS_REVIEW. User can retry or review manually.
+- Classification failure creates an unclassified NEEDS_REVIEW case, visible in the human queue.
+  Never fabricate a category or export an unclassified case. Previous results remain in history.
+- Native BL copies use AI SI readings. Recheck the actual generated file with AI before saving,
+  then check the file hash at adoption without calling AI. Adopt keeps the copy; reject deletes only that generated copy, not originals.
+- Optional AI-assisted readings/replacement attachments are available before human final handling.
+- The manual-review form independently records category, outcome, confirmed defect fields and handling note.
+  Saving manual handling or adopting a revision prevents further AI runs, even after reopening.
+  Original AI results are archived; a person confirms outcomes for original documents, not a corrected copy.
+- Category enums and official export shape stay fixed. SI is the reference; blank is uncertainty.
+- `docs/确认版流程说明.md` and local HTML/SVG/PNG diagram describe the current flow.
 
-## Next steps (in order)
-1. `cd frontend && npm install && npm run build` - fix build errors, then `npm run dev` against a local backend.
-2. Local smoke test: `uvicorn app.main:app --port 8000` + open http://localhost:3000, analyse email_004
-   (MISMATCH), email_001 (OK), email_507 (NEEDS_REVIEW), run the full inbox, download the submission JSON.
-3. Push to GitHub (`jake2ace/FS`), deploy backend on Render (render.yaml) and frontend on Vercel
-   (root dir `frontend`, env `BACKEND_URL`).
-4. Set `AI_PROVIDER` / `AI_API_KEY` on Render and confirm `GET /health` reports `ai.enabled: true`;
-   compare batch results with and without AI.
-5. Optional: Supabase persistence for decisions/run history; keep-alive ping for the Render free tier.
+## Runtime and validation
+
+- User chose DeepSeek V4.1 Flash: provider `deepseek`, model `deepseek-flash`, full mode,
+  JSON output, primary thinking enabled with high effort (middle of low/high/max). User chose deepseek-flash with max thinking for
+  the senior stage, after testing problem cases. OpenAI API code remains optional and unconfigured.
+  Keys only in gitignored backend/.env. Never print them or embed them in reports.
+- Main app: FastAPI + Next.js. Local backend 8000, frontend 3000. Keys never go to the frontend.
+- Cache version 3 archives old results. Current local cache is backend/.cache/deepseek-ai-only.
+  Preserve backend/.cache/workflow-preview and backend/.cache/deepseek-live as historical test data.
+- Offline checks: `AI_PROVIDER=none AI_MODE=off backend/.venv/bin/pytest -q backend/tests`.
+  Tests explicitly inject fixture AI; never run unit tests against paid live credentials.
+- `backend/tests/fakes.py` may use old helper functions to produce offline fixture responses;
+  production detection and review must not call classify_rules/extract_fields/compare_fields.
+- Some numeric/label helpers remain for mechanical native-file editing and legacy parser tests;
+  their output must not become a production business verdict.
+- Frontend: `cd frontend && npm run build` (type checks enabled).
+- Never read organisers' ground_truth.json or data generator. Participant inputs only.
+- Record live model usage, validation failures and known limits honestly; integration success is not accuracy.
+- Historical hybrid report: docs/DeepSeek-真实测试报告.md. Current AI-only report:
+  docs/DeepSeek-全AI测试报告.md. No cloud deployment has been verified.

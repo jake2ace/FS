@@ -76,7 +76,6 @@ export default function SmartInbox() {
             <option value="High risk">High risk</option>
             <option value="Needs review">Needs review</option>
             <option value="Safe to complete">Safe to complete</option>
-            <option value="Awaiting draft BL">Awaiting draft BL</option>
             <option value="No action">No action</option>
           </select>
           <label className="small"><input type="checkbox" checked={onlyAttach} onChange={(e) => { setOnlyAttach(e.target.checked); setPage(0); }} /> with attachments</label>

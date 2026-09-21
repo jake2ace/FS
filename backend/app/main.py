@@ -22,26 +22,40 @@ GET/POST /api/settings/policy             standard | strict
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 from . import __version__, config
 from .ai import AIClient
 from .data import Inbox
-from .pipeline import Analyser, build_correction_draft
-from .schemas import CATEGORIES, CaseResult
+from .pipeline import Analyser, AIUnavailable, build_correction_draft
+from .schemas import CATEGORIES, CaseResult, ManualReviewInput
 from .store import Store
 from .submission import build_submission
+from .workflow import human_report, attachment_report, now
+from .revisions import build_revision, revision_path, delete_revision, validate_revision
 
 inbox = Inbox(config.DATA_DIR, config.DATA_ZIP)
-ai = AIClient()
+ai = AIClient(mode=config.AI_MODE, thinking=config.AI_THINKING, reasoning_effort=config.AI_REASONING_EFFORT)
 store = Store(config.CACHE_DIR)
-analyser = Analyser(inbox, ai)
+senior_ai = AIClient(provider=config.AI_SENIOR_PROVIDER, api_key=config.AI_SENIOR_API_KEY,
+    model=config.AI_SENIOR_MODEL, timeout=config.AI_SENIOR_TIMEOUT, mode=config.AI_MODE,
+    fallback_model='', max_rpm=config.senior_max_rpm(), thinking=config.AI_SENIOR_THINKING,
+    reasoning_effort=config.AI_SENIOR_REASONING_EFFORT) if config.AI_SENIOR_MODEL and config.AI_SENIOR_API_KEY else None
+analyser = Analyser(inbox, ai, senior_ai)
 _run_tasks: dict[str, asyncio.Task] = {}
+_case_locks: dict[str, asyncio.Lock] = {}
+_retrying: set[tuple[str, str]] = set()
+
+def _case_lock(email_id: str) -> asyncio.Lock:
+    return _case_locks.setdefault(email_id, asyncio.Lock())
 
 
 @asynccontextmanager
@@ -62,6 +76,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(AIUnavailable)
+async def ai_unavailable_handler(request, exc):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
 # ---------------------------------------------------------------- helpers
@@ -96,6 +115,7 @@ def _summary_row(email: dict, res: Optional[CaseResult]) -> dict:
             "confidence": res.confidence,
             "automation": res.automation,
             "resolved": res.resolved,
+            "processing_status": res.processing_status,
             "decision": res.decision.model_dump() if res.decision else None,
             "analysed_at": res.analysed_at,
             "ai_used": res.ai_used,
@@ -107,9 +127,15 @@ RISK_ORDER = {"high": 0, "medium": 1, "low": 2, "none": 3}
 
 
 async def _analyse_and_store(email: dict, explain_with_ai: bool = False) -> CaseResult:
-    res = await analyser.analyse(email, policy=store.policy, explain_with_ai=explain_with_ai)
-    store.put(res)
-    return res
+    async with _case_lock(email["email_id"]):
+        previous = store.get(email["email_id"])
+        if previous and (previous.manual_review or previous.resolved):
+            raise ValueError("Human handling is final; continue through the human review form without AI.")
+        if previous and previous.processing_status == "PENDING_HUMAN_APPROVAL":
+            raise ValueError("Adopt or reject the pending revision before re-analysing.")
+        res = await analyser.analyse(email, policy=store.policy, explain_with_ai=explain_with_ai)
+        store.put(res)
+        return res
 
 
 # ---------------------------------------------------------------- health
@@ -124,6 +150,7 @@ async def health():
         "emails": len(inbox),
         "results_cached": len(store.results),
         "ai": ai.describe(),
+        "ai_senior": senior_ai.describe() if senior_ai else {"enabled": False, "provider": config.AI_SENIOR_PROVIDER, "model": config.AI_SENIOR_MODEL or None},
         "policy": store.policy,
     }
 
@@ -177,11 +204,15 @@ async def attachment_text(email_id: str, index: int):
         raise HTTPException(status_code=404, detail="no such attachment")
     from .parsers import parse_attachment  # local import: keeps module import light
 
-    data = await asyncio.to_thread(inbox.read_bytes, atts[index])
+    try:
+        data = await asyncio.to_thread(inbox.read_bytes, atts[index])
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Attachment file is missing")
     doc = await asyncio.to_thread(parse_attachment, atts[index], data)
     return {
         "path": doc.path, "format": doc.fmt, "readable": doc.readable, "error": doc.error,
-        "detected_type": doc.detected_type, "size_bytes": doc.size, "text": doc.text[:20000],
+        "detected_type": next((d.detected_type for d in store.get(email_id).docs if d.path == atts[index]), "UNKNOWN") if store.get(email_id) else "UNKNOWN",
+        "size_bytes": doc.size, "text": doc.text[:20000],
     }
 
 
@@ -193,7 +224,10 @@ async def analyse_email(email_id: str, force: bool = Query(default=True), explai
     existing = store.get(email_id)
     if existing and not force:
         return existing.model_dump(mode="json")
-    res = await _analyse_and_store(email, explain_with_ai=explain)
+    try:
+        res = await _analyse_and_store(email, explain_with_ai=explain)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     return res.model_dump(mode="json")
 
 
@@ -244,7 +278,9 @@ async def _run_batch(run_id: str, email_ids: list[str], force: bool) -> None:
                     run.done += 1
                     return
             run.done += 1
-            if res.category != "BL_COMPARISON":
+            if res.category is None:
+                run.needs_review += 1
+            elif res.category != "BL_COMPARISON":
                 run.not_applicable += 1
             elif res.status == "MISMATCH":
                 run.mismatch += 1
@@ -304,6 +340,8 @@ async def cancel_run(run_id: str):
     run = store.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="unknown run")
+    if run.status != "running":
+        raise HTTPException(status_code=409, detail="Only a running batch can be cancelled")
     run.status = "cancelled"
     task = _run_tasks.get(run_id)
     if task and not task.done():
@@ -316,13 +354,23 @@ async def retry_email(run_id: str, email_id: str):
     run = store.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="unknown run")
+    if run.status == "running":
+        raise HTTPException(status_code=409, detail="Wait for this run to finish before retrying failures")
+    key = (run_id, email_id)
+    if key in _retrying or not any(f.get("email_id") == email_id for f in run.failed):
+        raise HTTPException(status_code=409, detail="This email is not an available failed item")
     email = _email_or_404(email_id)
+    _retrying.add(key)
     try:
         res = await _analyse_and_store(email, explain_with_ai=False)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"retry failed: {type(exc).__name__}: {str(exc)[:200]}")
+        raise HTTPException(status_code=500, detail=f"Retry failed: {type(exc).__name__}; try again or inspect the source documents")
+    finally:
+        _retrying.discard(key)
     run.failed = [f for f in run.failed if f.get("email_id") != email_id]
-    if res.category != "BL_COMPARISON":
+    if res.category is None:
+        run.needs_review += 1
+    elif res.category != "BL_COMPARISON":
         run.not_applicable += 1
     elif res.status == "MISMATCH":
         run.mismatch += 1
@@ -330,21 +378,150 @@ async def retry_email(run_id: str, email_id: str):
         run.needs_review += 1
     else:
         run.ok += 1
+    store.flush(force=True)
     return {"run": run.model_dump(mode="json"), "result": res.model_dump(mode="json")}
 
 
 # ---------------------------------------------------------------- human decisions
 
+@app.post("/api/cases/{email_id}/manual-review")
+async def manual_review(email_id: str, payload: ManualReviewInput):
+    async with _case_lock(email_id):
+        if not store.get(email_id):
+            raise HTTPException(status_code=404, detail="Case not analysed yet")
+        try:
+            return store.record_manual_review(email_id, payload).model_dump(mode="json")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+
 @app.post("/api/cases/{email_id}/decision")
 async def case_decision(email_id: str, payload: dict = Body(...)):
-    action = str(payload.get("action", "")).lower()
-    if action not in ("confirm", "escalate", "resolve", "reopen"):
-        raise HTTPException(status_code=400, detail="action must be confirm | escalate | resolve | reopen")
-    note = payload.get("note")
-    res = store.record_decision(email_id, action, str(note)[:1000] if note else None, by=str(payload.get("by") or "operator"))
+    async with _case_lock(email_id):
+        action = str(payload.get("action", "")).lower()
+        if action not in ("confirm", "escalate", "resolve", "reopen", "approve_revision", "reject_revision"):
+            raise HTTPException(status_code=400, detail="Unknown review action")
+        current = store.get(email_id)
+        if not current:
+            raise HTTPException(status_code=404, detail="Case not analysed yet")
+        report = current.working_report
+        if action in ("approve_revision", "reject_revision"):
+            if not report or payload.get("revision_id") != report["revision_id"]:
+                raise HTTPException(status_code=409, detail="The report changed; reload before reviewing")
+        elif current.processing_status == "PENDING_HUMAN_APPROVAL":
+            raise HTTPException(status_code=409, detail="Adopt or reject the pending revision first")
+        note = str(payload.get("note") or "")[:1000] or None
+        try:
+            if action == "approve_revision" and report.get("kind") == "corrected_bl":
+                await validate_revision(config.CACHE_DIR, current, report, analyser, inbox, store.policy)
+            if action == "reject_revision":
+                if current.processing_status != "PENDING_HUMAN_APPROVAL":
+                    raise ValueError("There is no pending revision")
+                delete_revision(config.CACHE_DIR, email_id, report)
+            res = store.record_decision(email_id, action, note, by=str(payload.get("by") or "operator")[:100])
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        return res.model_dump(mode="json")
+
+
+def _reviewable(email_id: str) -> CaseResult:
+    res = store.get(email_id)
     if not res:
-        raise HTTPException(status_code=404, detail="case not analysed yet")
-    return res.model_dump(mode="json")
+        raise HTTPException(status_code=404, detail="Case not analysed yet")
+    if res.manual_review or res.resolved:
+        raise HTTPException(status_code=409, detail="Continue human handling without further AI processing")
+    if res.category != "BL_COMPARISON":
+        raise HTTPException(status_code=400, detail="No BL review is required for this category")
+    if res.processing_status == "PENDING_HUMAN_APPROVAL":
+        raise HTTPException(status_code=409, detail="Adopt or reject the pending revision first")
+    return res
+
+
+@app.post("/api/cases/{email_id}/revision")
+async def create_revision(email_id: str):
+    async with _case_lock(email_id):
+        res = _reviewable(email_id)
+        try:
+            report = await build_revision(res, inbox, config.CACHE_DIR, analyser, store.policy)
+        except ValueError as exc:
+            res.history.append({"event": "revision_generation_failed", "at": now(), "note": str(exc)})
+            store.flush(force=True)
+            raise HTTPException(status_code=422, detail=str(exc))
+        return store.set_working_report(email_id, report).model_dump(mode="json")
+
+
+@app.get("/api/cases/{email_id}/revision/{revision_id}/file")
+async def download_revision(email_id: str, revision_id: str):
+    res = store.get(email_id)
+    candidates = [res.working_report] if res else []
+    if res:
+        for event in res.history:
+            previous = event.get("report") or event.get("previous", {}).get("working_report")
+            if previous and (previous.get("decision") or {}).get("action") == "approve_revision":
+                candidates.append(previous)
+    report = next((r for r in candidates if r and r["revision_id"] == revision_id), None)
+    if not report or not report.get("file_available"):
+        raise HTTPException(status_code=404, detail="Revision file is unavailable or has been deleted")
+    path = revision_path(config.CACHE_DIR, email_id, report)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Revision file is missing")
+    return FileResponse(path, filename=report["filename"])
+
+
+@app.post("/api/cases/{email_id}/readings")
+async def review_readings(email_id: str, payload: dict = Body(...)):
+    async with _case_lock(email_id):
+        original = _reviewable(email_id)
+        source = original
+        # Let a person review newly supplied documents instead of the original missing file.
+        if original.working_report and original.working_report.get("docs"):
+            source = original.model_copy(deep=True)
+            from .schemas import DocInfo
+            source.docs = [DocInfo.model_validate(d) for d in original.working_report["docs"]]
+        try:
+            report = await human_report(source, payload.get("fields", {}), str(payload.get("note") or "")[:1000], analyser, store.policy)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return store.set_working_report(email_id, report).model_dump(mode="json")
+
+
+@app.post("/api/cases/{email_id}/attachments")
+async def replace_attachments(email_id: str, payload: dict = Body(...)):
+    async with _case_lock(email_id):
+        _reviewable(email_id)
+        files, note = payload.get("files"), str(payload.get("note") or "").strip()[:1000]
+        if not isinstance(files, list) or len(files) != 2 or not note:
+            raise HTTPException(status_code=422, detail="Supply one SI and one draft BL plus a reason")
+        data = {}
+        for item in files:
+            if not isinstance(item, dict):
+                raise HTTPException(status_code=422, detail="Invalid file data")
+            name = str(item.get("name", ""))
+            encoded = item.get("base64", "")
+            if Path(name).name != name or Path(name).suffix.lower() not in (".txt", ".pdf", ".docx", ".xlsx", ".png", ".jpg", ".jpeg"):
+                raise HTTPException(status_code=422, detail="Use TXT, PDF, DOCX, XLSX, PNG or JPG attachments")
+            if not isinstance(encoded, str) or len(encoded) > 14_000_000:
+                raise HTTPException(status_code=413, detail="Each attachment must be at most 10 MB")
+            try:
+                content = base64.b64decode(encoded, validate=True)
+            except (ValueError, binascii.Error):
+                raise HTTPException(status_code=422, detail="Invalid file encoding")
+            if not content or len(content) > 10_000_000 or name in data:
+                raise HTTPException(status_code=422, detail="Files must be nonempty, distinct, and at most 10 MB each")
+            data[name] = content
+        class UploadedInbox:
+            def read_bytes(self, path): return data[path]
+        email = dict(_email_or_404(email_id), attachments=list(data))
+        # The known BL category is held for the human-supplied replacement pair.
+        email["subject"] = "Draft BL for checking"
+        email["body"] = "Please compare the SI and draft BL. Attached are the SI and draft BL."
+        check = await Analyser(UploadedInbox(), ai, senior_ai).analyse(email, policy=store.policy)
+        report = attachment_report(check, note)
+        folder = config.CACHE_DIR / 'review-inputs' / email_id / report['revision_id']
+        folder.mkdir(parents=True, exist_ok=False)
+        for name, content in data.items():
+            (folder / name).write_bytes(content)
+        return store.set_working_report(email_id, report).model_dump(mode="json")
 
 
 @app.post("/api/cases/{email_id}/correction-draft")
@@ -353,6 +530,8 @@ async def correction_draft(email_id: str):
     res = store.get(email_id)
     if not res:
         raise HTTPException(status_code=404, detail="case not analysed yet")
+    if res.category != "BL_COMPARISON":
+        raise HTTPException(status_code=400, detail="No BL correction is required for this category")
     return {"email_id": email_id, "draft": build_correction_draft(res, email), "editable": True, "sends_email": False}
 
 
@@ -361,7 +540,7 @@ async def correction_draft(email_id: str):
 @app.get("/api/dashboard")
 async def dashboard():
     summary = store.summary(len(inbox))
-    open_cases = [r for r in store.all() if r.category == "BL_COMPARISON" and r.automation == "review_required" and not r.resolved]
+    open_cases = [r for r in store.all() if r.automation == "review_required" and not r.resolved]
     open_cases.sort(key=lambda r: (RISK_ORDER.get(r.risk, 9), -len(r.defect_fields), r.email_id))
     priority = [_summary_row(inbox.get(r.email_id) or {"email_id": r.email_id}, r) for r in open_cases[:12]]
     runs = store.runs_list()
@@ -370,11 +549,12 @@ async def dashboard():
         "priority": priority,
         "policy": {
             "name": store.policy,
-            "auto_complete_threshold": 0.9 if store.policy == "strict" else 0.8,
-            "description": "Only cases whose seven fields all match, with evidence available and confidence above the threshold, are auto-completed. Every mismatch, missing document, unreadable file or blank value goes to a person.",
+            "decision_method": "ai",
+            "description": "AI decides all seven comparisons. Uncertainty is reviewed once by the configured senior AI, then handed to a person if unresolved. Human handling is final. Strict policy asks AI to refer uncertain equivalences for review.",
         },
         "last_run": runs[0].model_dump(mode="json") if runs else None,
         "ai": ai.describe(),
+        "ai_senior": senior_ai.describe() if senior_ai else {"enabled": False, "provider": config.AI_SENIOR_PROVIDER, "model": config.AI_SENIOR_MODEL or None},
     }
 
 
@@ -386,7 +566,7 @@ async def submission(download: bool = Query(default=False)):
     if download:
         headers["Content-Disposition"] = 'attachment; filename="submission.json"'
     if missing:
-        headers["X-Unanalysed-Emails"] = str(len(missing))
+        raise HTTPException(status_code=409, detail=f"Analyse or manually classify the remaining {len(missing)} emails before exporting the submission")
     return JSONResponse(content=sub, headers=headers)
 
 

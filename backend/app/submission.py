@@ -10,6 +10,8 @@ from .schemas import CaseResult, SubmissionEntry
 
 
 def to_entry(res: CaseResult) -> SubmissionEntry:
+    if res.category is None:
+        raise ValueError('A person must classify this email before export.')
     if res.category != "BL_COMPARISON":
         return SubmissionEntry(category=res.category, status="OK", review_reason=None, defect_fields=[], has_defect=False)
     if res.status == "MISMATCH":
@@ -28,7 +30,7 @@ def build_submission(email_ids: list[str], results: dict[str, CaseResult]) -> tu
     missing: list[str] = []
     for eid in email_ids:
         r: Optional[CaseResult] = results.get(eid)
-        if r is None:
+        if r is None or r.category is None:
             missing.append(eid)
             entry = SubmissionEntry(category="GENERAL", status="OK", review_reason=None, defect_fields=[], has_defect=False)
         else:

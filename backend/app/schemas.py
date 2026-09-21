@@ -30,11 +30,16 @@ FIELD_LABELS = {
 }
 
 
+class ClassificationEvidence(BaseModel):
+    source: Literal['body', 'subject']
+    quote: str = Field(min_length=1)
+
+
 class FieldValue(BaseModel):
     value: Optional[str] = None      # cleaned value (party name / port / number as text)
     evidence: Optional[str] = None   # raw source line or cell
     label: Optional[str] = None      # label as written in the document
-    source: str = "rules"            # rules | ai
+    source: str = "rules"            # rules | ai | senior
 
 
 class DocInfo(BaseModel):
@@ -46,10 +51,12 @@ class DocInfo(BaseModel):
     readable: bool = True
     read_error: Optional[str] = None
     size_bytes: int = 0
+    recovery: str = "not_needed"
+    recovery_confidence: float = 1.0
     text_chars: int = 0
     text_preview: str = ""
     fields: dict[str, FieldValue] = Field(default_factory=dict)
-    extraction_method: str = "none"  # rules | ai | ai+rules | none
+    extraction_method: str = "none"  # rules | ai | ai+rules | +senior | none
 
 
 class FieldRow(BaseModel):
@@ -64,21 +71,42 @@ class FieldRow(BaseModel):
 
 
 class Decision(BaseModel):
-    action: Literal["confirm", "escalate", "resolve", "reopen"]
+    action: Literal["confirm", "escalate", "resolve", "reopen", "approve_revision", "reject_revision"]
     note: Optional[str] = None
     by: str = "operator"
     at: str
 
 
+class SeniorReview(BaseModel):
+    """Second opinion of the senior (tier-2) model. Only suspicious cases are escalated to it."""
+    model: str
+    available: bool = True                                   # False when the senior model could not be reached
+    triggers: list[str] = Field(default_factory=list)        # why the case was escalated
+    category: Optional[str] = None                           # category the senior model would assign
+    category_confidence: float = 0.0
+    outcome: Optional[str] = None                            # OK | MISMATCH | NEEDS_REVIEW - the senior model's own opinion
+    agrees: Optional[bool] = None                            # outcome == deterministic status
+    overrides: list[str] = Field(default_factory=list)       # evidence-backed corrections / equivalences that were applied
+    rejected: list[str] = Field(default_factory=list)        # suggestions rejected because the documents do not support them
+    equivalent_fields: list[str] = Field(default_factory=list)
+    assessment: str = ""
+    confidence: float = 0.0
+
+
 class CaseResult(BaseModel):
+    pipeline_version: int = 0
+    decision_method: str = "legacy"
+    ai_model: Optional[str] = None
     email_id: str
     subject: str
     sender: str
     attachments: list[str] = Field(default_factory=list)
 
-    category: Category
+    category: Optional[Category] = None  # Unknown until a person classifies a failed AI request.
     category_confidence: float
     category_reason: str = ""
+    category_evidence: list[ClassificationEvidence] = Field(default_factory=list)
+    category_prompt_version: Optional[str] = None
     category_method: str = "rules"   # rules | ai | ai+rules
     intent: str = "other"            # verify_documents | request_draft | other
 
@@ -100,12 +128,28 @@ class CaseResult(BaseModel):
     fields: list[FieldRow] = Field(default_factory=list)
     docs: list[DocInfo] = Field(default_factory=list)
     ai_used: bool = False
+    senior_review: Optional[SeniorReview] = None
     warnings: list[str] = Field(default_factory=list)
+    unconfirmed_ai_assessment: Optional[str] = None
+    manual_review: Optional[dict] = None
+    decision_chain: list[dict] = Field(default_factory=list)
     analysed_at: str
     duration_ms: int = 0
 
     decision: Optional[Decision] = None
     resolved: bool = False
+    processing_status: str = "NO_ACTION"
+    working_report: Optional[dict] = None
+    history: list[dict] = Field(default_factory=list)
+
+
+class ManualReviewInput(BaseModel):
+    category: Category
+    status: Status
+    defect_fields: list[str] = Field(default_factory=list)
+    note: str = Field(min_length=1, max_length=2000)
+    by: str = Field(default='operator', min_length=1, max_length=100)
+    complete: bool = True
 
 
 class SubmissionEntry(BaseModel):

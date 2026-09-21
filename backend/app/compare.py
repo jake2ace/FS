@@ -6,16 +6,10 @@ raise false alarms, while real differences (another company, another port,
 from __future__ import annotations
 
 import re
-from difflib import SequenceMatcher
 from typing import Optional
 
-from .extract import parse_container_count, parse_weight_kg
+from .extract import parse_container_count, parse_weight_kg, valid_value
 from .schemas import FIELDS, FIELD_LABELS, FieldRow, FieldValue
-
-LEGAL_SUFFIXES = re.compile(
-    r"\b(PTE|LTD|LIMITED|LLC|INC|CO|COMPANY|CORP|CORPORATION|SDN|BHD|GMBH|PTY|FZE|FZ|FZ-LLC|SA|SPA|AG|BV|NV|PLC|JOINT STOCK COMPANY|JSC|KG|SRL|LLP|LP)\b",
-)
-
 
 def _upper_ascii(s: str) -> str:
     s = s.upper()
@@ -34,9 +28,9 @@ def norm_party(value: Optional[str]) -> str:
 
 
 def _party_core(v: str) -> str:
-    core = LEGAL_SUFFIXES.sub(" ", v)
-    core = re.sub(r"\s+", " ", core).strip()
-    return core or v
+    # Expand equivalent abbreviations without discarding legal identity.
+    aliases = {"LIMITED": "LTD", "COMPANY": "CO", "CORPORATION": "CORP", "INCORPORATED": "INC"}
+    return " ".join(aliases.get(token, token) for token in v.split())
 
 
 def parties_equal(a: Optional[str], b: Optional[str]) -> tuple[bool, str]:
@@ -48,8 +42,6 @@ def parties_equal(a: Optional[str], b: Optional[str]) -> tuple[bool, str]:
     ca, cb = _party_core(na), _party_core(nb)
     if ca == cb:
         return True, "names match (legal suffix differs only)"
-    if len(ca) >= 8 and SequenceMatcher(None, ca, cb).ratio() >= 0.95:
-        return True, "names match (minor spelling/punctuation difference)"
     return False, "different party"
 
 
@@ -97,7 +89,7 @@ def count_equal(a: Optional[str], b: Optional[str]) -> tuple[Optional[bool], str
     return False, f"container count differs: SI {ia} / BL {ib}", ia, ib
 
 
-def weight_equal(a: Optional[str], b: Optional[str], tolerance_kg: float = 1.0) -> tuple[Optional[bool], str, Optional[float], Optional[float]]:
+def weight_equal(a: Optional[str], b: Optional[str], tolerance_kg: float = 0.000001) -> tuple[Optional[bool], str, Optional[float], Optional[float]]:
     wa = parse_weight_kg(a) if a else None
     wb = parse_weight_kg(b) if b else None
     if wa is None or wb is None:
@@ -132,9 +124,10 @@ def compare_fields(si: dict[str, FieldValue], bl: dict[str, FieldValue]) -> tupl
         row = FieldRow(field=fld, label=FIELD_LABELS[fld], si_value=display_value(fld, s),
                        bl_value=display_value(fld, b), si_evidence=s.evidence if s else None,
                        bl_evidence=b.evidence if b else None)
-        if sv is None or bv is None:
+        if not valid_value(fld, sv) or not valid_value(fld, bv):
             row.match = None
-            row.reason = "missing in SI" if sv is None and bv is not None else ("missing in draft BL" if bv is None and sv is not None else "missing in both documents")
+            invalid = [side for side, value in (("SI", sv), ("draft BL", bv)) if not valid_value(fld, value)]
+            row.reason = "missing or invalid in " + " and ".join(invalid)
             rows.append(row)
             continue
         if fld in ("shipper", "consignee", "notify_party"):

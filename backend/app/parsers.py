@@ -40,6 +40,8 @@ class ParsedDoc:
     text: str = ""
     detected_type: str = DOC_UNKNOWN
     role_hint: Optional[str] = None
+    recovery: str = "not_needed"
+    recovery_confidence: float = 1.0
 
 
 def role_hint_from_name(filename: str) -> Optional[str]:

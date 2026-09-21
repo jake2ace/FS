@@ -11,6 +11,7 @@ frontend/.next/
 frontend/out/
 frontend/.vercel/
 npm-debug.log*
+*.tsbuildinfo
 # env / secrets - never commit keys
 .env
 .env.*
@@ -19,3 +20,12 @@ npm-debug.log*
 .DS_Store
 .idea/
 .vscode/
+.claude/settings.local.json
+
+# docs: commit the confirmed workflow only; test records stay local
+# docs：只提交确认版流程图与流程说明，测试记录不入库
+docs/*
+!docs/FreightSentinel-确认版流程图.html
+!docs/FreightSentinel-确认版流程图.svg
+!docs/FreightSentinel-确认版流程图.png
+!docs/确认版流程说明.md

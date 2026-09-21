@@ -12,7 +12,9 @@ const nextConfig = {
       { source: '/backend-health', destination: `${backend}/health` },
     ];
   },
-  typescript: { ignoreBuildErrors: true },
+  // A single analysis can take a while when the AI provider is slow or retrying;
+  // the default rewrite proxy timeout (30 s) would otherwise surface as a 500 in the UI.
+  experimental: { proxyTimeout: 600_000 },
   eslint: { ignoreDuringBuilds: true },
 };
 

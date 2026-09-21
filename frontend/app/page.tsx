@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { StatusBadge, RiskBadge } from '@/components/StatusBadge';
+import { StatusBadge } from '@/components/StatusBadge';
 import { api, post, fmtTime, REVIEW_LABEL } from '@/lib/api';
 
 export default function TodayWorkCentre() {
@@ -50,11 +50,12 @@ export default function TodayWorkCentre() {
         </div>
       </div>
 
-      <div className="grid grid-6">
+      <div className="grid grid-7">
         <div className="card tile"><div className="tile-label">Comparison requests</div><div className="tile-value">{s.comparison_requests}</div><div className="tile-hint">of {s.analysed} analysed emails</div></div>
-        <div className="card tile risk"><div className="tile-label">High risk</div><div className="tile-value">{s.high_risk}</div><div className="tile-hint">mismatch between SI and draft BL</div></div>
+        <div className="card tile risk"><div className="tile-label">Mismatches</div><div className="tile-value">{s.high_risk}</div><div className="tile-hint">at least one of the seven fields differs</div></div>
         <div className="card tile warn"><div className="tile-label">Needs review</div><div className="tile-value">{s.needs_review}</div><div className="tile-hint">missing / unreadable / blank</div></div>
         <div className="card tile safe"><div className="tile-label">Safe completed</div><div className="tile-value">{s.safe_completed}</div><div className="tile-hint">auto-completed under {s.policy} policy</div></div>
+        <div className="card tile"><div className="tile-label">Draft BL requested</div><div className="tile-value">{s.awaiting_draft ?? 0}</div><div className="tile-hint">we have to send the document out first</div></div>
         <div className="card tile"><div className="tile-label">Pending approval</div><div className="tile-value">{s.pending_approval}</div><div className="tile-hint">rechecked revisions awaiting a person</div></div>
         <div className="card tile"><div className="tile-label">Not analysed</div><div className="tile-value">{s.not_analysed}</div><div className="tile-hint">of {s.total_emails} emails in the inbox</div></div>
       </div>
@@ -69,7 +70,7 @@ export default function TodayWorkCentre() {
             <div className="empty">{s.analysed === 0 ? 'Nothing analysed yet. Start with the Smart Inbox or run the full inbox.' : 'No open risk cases. Everything is either safe or already handled.'}</div>
           ) : (
             <table>
-              <thead><tr><th>Email</th><th>Finding</th><th>Risk</th><th>Status</th><th></th></tr></thead>
+              <thead><tr><th>Email</th><th>Finding</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {data.priority.map((p: any) => (
                   <tr key={p.email_id}>
@@ -78,7 +79,6 @@ export default function TodayWorkCentre() {
                       <div>{p.headline}</div>
                       <div className="muted small truncate">{p.subject}</div>
                     </td>
-                    <td><RiskBadge risk={p.risk} /></td>
                     <td><StatusBadge ui={p.ui_status} status={p.status} />{p.review_reason ? <div className="small muted">{REVIEW_LABEL[p.review_reason] || p.review_reason}</div> : null}</td>
                     <td className="right"><Link href={`/cases/${p.email_id}`} className="btn btn-sm">Open</Link></td>
                   </tr>
@@ -119,6 +119,32 @@ export default function TodayWorkCentre() {
           </div>
         </div>
       </div>
+
+      {data.actions && data.actions.length > 0 ? (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="card-head">
+            <h2>Action list - draft BL requested</h2>
+            <span className="small muted">{data.actions_total} emails</span>
+          </div>
+          <p className="small muted">These emails ask our team to send out a draft BL so the customer can check it. No document is attached yet, so there is nothing for the AI to compare and nothing for a reviewer to decide - the work is to send the document, which is why they stay out of the review queue.</p>
+          <table>
+            <thead><tr><th>Email</th><th>Request</th><th>Action</th><th></th></tr></thead>
+            <tbody>
+              {data.actions.map((a: any) => (
+                <tr key={a.email_id}>
+                  <td className="mono nowrap">{a.email_id}</td>
+                  <td className="muted small truncate">{a.subject}</td>
+                  <td className="small">{a.suggested_action}</td>
+                  <td className="right"><Link href={`/cases/${a.email_id}`} className="btn btn-sm">Open</Link></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.actions_total > data.actions.length ? (
+            <p className="small muted">Showing the first {data.actions.length} of {data.actions_total}.</p>
+          ) : null}
+        </div>
+      ) : null}
     </>
   );
 }

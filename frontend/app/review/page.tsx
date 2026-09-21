@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { RiskBadge, StatusBadge } from '@/components/StatusBadge';
+import { StatusBadge } from '@/components/StatusBadge';
 import { api, post, pct, REVIEW_LABEL, type EmailRow } from '@/lib/api';
 
 const RISK_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2, none: 3 };
@@ -64,13 +64,12 @@ export default function ReviewQueue() {
           <div className="empty">{rows.length === 0 ? 'No results yet - analyse emails from the Smart Inbox or run the full inbox.' : 'Nothing here.'}</div>
         ) : (
           <table>
-            <thead><tr><th>Email</th><th>Finding</th><th>Risk</th><th>Status</th><th>Fields / reason</th><th className="right">Conf.</th><th></th></tr></thead>
+            <thead><tr><th>Email</th><th>Finding</th><th>Status</th><th>Fields / reason</th><th className="right">Conf.</th><th></th></tr></thead>
             <tbody>
               {list.map((r) => (
                 <tr key={r.email_id}>
                   <td className="mono nowrap"><Link href={`/cases/${r.email_id}`}>{r.email_id}</Link></td>
                   <td><div>{r.headline}</div><div className="small muted truncate">{r.subject}</div></td>
-                  <td><RiskBadge risk={r.risk} /></td>
                   <td><StatusBadge ui={r.ui_status} status={r.status} /></td>
                   <td className="small">
                     {r.defect_fields && r.defect_fields.length ? r.defect_fields.join(', ') : r.review_reason ? REVIEW_LABEL[r.review_reason] || r.review_reason : '–'}

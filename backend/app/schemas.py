@@ -116,7 +116,7 @@ class CaseResult(BaseModel):
     has_defect: bool = False
     defect_fields: list[str] = Field(default_factory=list)
 
-    ui_status: str = "No action"     # Safe to complete | High risk | Needs review | Awaiting draft BL | No action
+    ui_status: str = "No action"     # Safe to complete | Mismatch | Needs review | Draft BL requested | No action
     risk: str = "none"               # high | medium | low | none
     headline: str = ""
     explanation: str = ""

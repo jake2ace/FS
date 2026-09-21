@@ -179,13 +179,22 @@ class Analyser:
             return self._handoff(base, detail, docs=infos, started=started, method='response_validation',
                                  assessment=str(raw.get('explanation') or '')[:2000])
         status = verdict.status
-        ui, risk, automation = ('Safe to complete','low','auto_completed') if status=='OK' else (
-            ('High risk','high','review_required') if status=='MISMATCH' else ('Needs review','medium','review_required'))
+        # An email that only asks for the draft BL to be sent has no documents to compare yet.
+        # It is neither an automated completion nor a failure needing a human decision: it is a
+        # business action for the recipient. The AI decided the intent; this only routes it.
+        awaiting_draft = status == 'OK' and base.get('intent') == 'request_draft' and not docs
+        if awaiting_draft:
+            ui, risk, automation = 'Draft BL requested', 'none', 'none'
+        else:
+            ui, risk, automation = ('Safe to complete','low','auto_completed') if status=='OK' else (
+                ('Mismatch','high','review_required') if status=='MISMATCH' else ('Needs review','medium','review_required'))
         return CaseResult(**base, status=status, review_reason=verdict.review_reason,
             review_detail=verdict.explanation if status=='NEEDS_REVIEW' else None,
             has_defect=status=='MISMATCH', defect_fields=verdict.defect_fields,
-            ui_status=ui, risk=risk, headline={'OK':'No mismatch detected','MISMATCH':'AI detected field mismatches',
-                                               'NEEDS_REVIEW':'AI requests human review'}[status],
+            ui_status=ui, risk=risk,
+            headline='Draft BL requested - nothing to compare yet' if awaiting_draft else
+                     {'OK':'No mismatch detected','MISMATCH':'AI detected field mismatches',
+                      'NEEDS_REVIEW':'AI requests human review'}[status],
             explanation=verdict.explanation, suggested_action=verdict.suggested_action, confidence=verdict.confidence,
             evidence_available=bool(rows) and all(r.si_evidence and r.bl_evidence for r in rows),
             automation=automation, fields=rows, docs=infos, ai_used=True,

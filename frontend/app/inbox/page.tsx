@@ -73,7 +73,7 @@ export default function SmartInbox() {
           </select>
           <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }}>
             <option value="">All statuses</option>
-            <option value="High risk">High risk</option>
+            <option value="Mismatch">Mismatch</option>
             <option value="Needs review">Needs review</option>
             <option value="Safe to complete">Safe to complete</option>
             <option value="No action">No action</option>

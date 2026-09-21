@@ -543,10 +543,20 @@ async def dashboard():
     open_cases = [r for r in store.all() if r.automation == "review_required" and not r.resolved]
     open_cases.sort(key=lambda r: (RISK_ORDER.get(r.risk, 9), -len(r.defect_fields), r.email_id))
     priority = [_summary_row(inbox.get(r.email_id) or {"email_id": r.email_id}, r) for r in open_cases[:12]]
+    # Emails that only ask for the draft BL to be sent: a business action for a person,
+    # not a case the AI failed to decide. Kept out of the review queue on purpose.
+    awaiting = sorted((r for r in store.all()
+                       if r.ui_status == "Awaiting draft BL" and not r.resolved),
+                      key=lambda r: r.email_id)
+    actions = [{"email_id": r.email_id, "subject": r.subject, "from": r.sender,
+                "suggested_action": r.suggested_action, "explanation": r.explanation}
+               for r in awaiting[:12]]
     runs = store.runs_list()
     return {
         "summary": summary,
         "priority": priority,
+        "actions": actions,
+        "actions_total": len(awaiting),
         "policy": {
             "name": store.policy,
             "decision_method": "ai",

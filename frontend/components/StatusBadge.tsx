@@ -4,9 +4,9 @@ export function StatusBadge({ ui, status }: { ui?: string; status?: string }) {
   const label = ui || status || 'Not analysed';
   let cls = 'badge-neutral';
   if (label === 'Safe to complete' || status === 'OK') cls = 'badge-safe';
-  if (label === 'High risk' || status === 'MISMATCH') cls = 'badge-risk';
+  if (label === 'Mismatch' || label === 'High risk' || status === 'MISMATCH') cls = 'badge-risk';
   if (label === 'Needs review' || status === 'NEEDS_REVIEW') cls = 'badge-warn';
-  if (label === 'Awaiting draft BL' || label === 'No action') cls = 'badge-info';
+  if (label === 'Draft BL requested' || label === 'Awaiting draft BL' || label === 'No action') cls = 'badge-info';
   if (label === 'Human completed') cls = 'badge-safe';
   if (!ui && !status) cls = 'badge-neutral';
   return <span className={`badge ${cls}`}>{label}</span>;

@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import FieldTable from '@/components/FieldTable';
 import ReviewWorkflow from '@/components/ReviewWorkflow';
-import { CategoryBadge, RiskBadge, StatusBadge } from '@/components/StatusBadge';
+import { CategoryBadge, StatusBadge } from '@/components/StatusBadge';
 import { api, post, pct, fmtTime, REVIEW_LABEL, type CaseResult } from '@/lib/api';
 
 const DOC_TYPE_LABEL: Record<string, string> = {
@@ -118,7 +118,6 @@ export default function CaseDetail() {
             <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <StatusBadge ui={r.ui_status} status={r.status} />
               <CategoryBadge category={r.category} />
-              <RiskBadge risk={r.risk} />
               <span className="small">confidence {pct(r.confidence)}</span>
               <span className="small muted">· evidence {r.evidence_available ? 'available' : 'incomplete'}</span>
               <span className="small muted">· {r.decision_method === 'human' ? 'Human decision' : r.decision_method === 'ai' ? 'AI decision' : 'AI response needs review'}{r.ai_model && !r.manual_review ? ` · ${r.ai_model}` : ''}</span>

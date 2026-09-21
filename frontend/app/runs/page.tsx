@@ -113,6 +113,16 @@ export default function BatchRun() {
           {latest ? (
             <>
               <div className="progress" style={{ margin: '8px 0' }}><div style={{ width: `${latest.total ? Math.round((latest.done / latest.total) * 100) : 0}%` }} /></div>
+              {/* Clearing removes the results but keeps the run log: those runs did happen,
+                  and the record of them is the evidence that the pipeline completes. Without
+                  a word here the page reads as broken - a finished 520/520 run sitting next
+                  to a counter that says nothing has been analysed. */}
+              {latest.status === 'completed' && subStatus && subStatus.analysed === 0 ? (
+                <p className="small muted" style={{ margin: '0 0 10px' }}>
+                  The results from this run were cleared. The run itself is kept as a record -
+                  analyse the inbox again to repopulate the dashboards.
+                </p>
+              ) : null}
               {latest.status === 'running' ? (
                 // The bar spends its last stretch looking stuck, and an unexplained stall
                 // reads as a crash. It is not one: the cases still running are the ones the

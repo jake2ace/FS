@@ -36,7 +36,7 @@ from . import __version__, config
 from .ai import AIClient
 from .data import Inbox
 from .pipeline import Analyser, AIUnavailable, build_correction_draft
-from .schemas import CATEGORIES, CaseResult, ManualReviewInput
+from .schemas import CATEGORIES, DRAFT_REQUESTED_UI, CaseResult, ManualReviewInput
 from .store import Store
 from .submission import build_submission
 from .workflow import human_report, attachment_report, now
@@ -546,7 +546,7 @@ async def dashboard():
     # Emails that only ask for the draft BL to be sent: a business action for a person,
     # not a case the AI failed to decide. Kept out of the review queue on purpose.
     awaiting = sorted((r for r in store.all()
-                       if r.ui_status == "Awaiting draft BL" and not r.resolved),
+                       if r.ui_status == DRAFT_REQUESTED_UI and not r.resolved),
                       key=lambda r: r.email_id)
     actions = [{"email_id": r.email_id, "subject": r.subject, "from": r.sender,
                 "suggested_action": r.suggested_action, "explanation": r.explanation}

@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from .schemas import CaseResult, Decision, RunState, ManualReviewInput, FIELDS
+from .schemas import CaseResult, Decision, RunState, ManualReviewInput, FIELDS, DRAFT_REQUESTED_UI
 
 
 def _now() -> str:
@@ -238,7 +238,7 @@ class Store:
             "needs_review": sum(1 for r in res if r.status == "NEEDS_REVIEW" and not r.resolved),
             "safe_completed": sum(1 for r in bl if r.automation == "auto_completed" and r.processing_status == "NO_ACTION"),
             "pending_approval": sum(1 for r in bl if r.processing_status == "PENDING_HUMAN_APPROVAL"),
-            "awaiting_draft": sum(1 for r in bl if r.ui_status == "Awaiting draft BL" and not r.resolved),
+            "awaiting_draft": sum(1 for r in bl if r.ui_status == DRAFT_REQUESTED_UI and not r.resolved),
             "resolved": sum(1 for r in res if r.resolved),
             "open_review_queue": len(open_review),
             "policy": self.policy,

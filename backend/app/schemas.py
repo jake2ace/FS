@@ -93,6 +93,11 @@ class SeniorReview(BaseModel):
     confidence: float = 0.0
 
 
+# The ui_status of a BL_COMPARISON email that only asks for the draft BL to be sent.
+# Defined once: pipeline writes it, the dashboard and the action list count it.
+DRAFT_REQUESTED_UI = "Draft BL requested"
+
+
 class CaseResult(BaseModel):
     pipeline_version: int = 0
     decision_method: str = "legacy"

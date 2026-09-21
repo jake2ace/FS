@@ -16,7 +16,8 @@ from .ai_contract import Classification, Verdict, source_excerpt
 from .data import Inbox
 from .parsers import ParsedDoc, parse_attachment
 from .recovery import recover_document
-from .schemas import FIELDS, FIELD_LABELS, CaseResult, DocInfo, FieldRow, FieldValue, SeniorReview
+from .schemas import (FIELDS, FIELD_LABELS, DRAFT_REQUESTED_UI, CaseResult, DocInfo,
+                      FieldRow, FieldValue, SeniorReview)
 
 CATEGORY_LABELS = {'BL_COMPARISON':'BL comparison request', 'SI_REQUEST':'New SI request',
                    'INVOICE_QUERY':'Invoice query', 'GENERAL':'General / operational notice', 'SPAM':'Spam'}
@@ -184,7 +185,7 @@ class Analyser:
         # business action for the recipient. The AI decided the intent; this only routes it.
         awaiting_draft = status == 'OK' and base.get('intent') == 'request_draft' and not docs
         if awaiting_draft:
-            ui, risk, automation = 'Draft BL requested', 'none', 'none'
+            ui, risk, automation = DRAFT_REQUESTED_UI, 'none', 'none'
         else:
             ui, risk, automation = ('Safe to complete','low','auto_completed') if status=='OK' else (
                 ('Mismatch','high','review_required') if status=='MISMATCH' else ('Needs review','medium','review_required'))

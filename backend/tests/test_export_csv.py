@@ -54,3 +54,18 @@ def test_a_case_with_nothing_to_fix_still_accounts_for_itself(client):
     assert rows[0][0] == 'email_test'
     assert rows[0][3:6] == ['', '', '']
     assert rows[0][7].startswith('OK')
+
+
+def test_summary_answers_the_supervisor_question(client):
+    """The supervisor's question, not the operator's.
+
+    The case list says what to fix next. These say where the paperwork keeps breaking
+    and whether a bad draft is usually one mistake or several - the numbers that can
+    change something upstream rather than one case at a time.
+    """
+    c, _, _ = client
+    summary = c.get('/api/dashboard').json()['summary']
+    # The fixture case differs on container_count and nothing else.
+    assert summary['defects_by_field'] == {'container_count': 1}
+    assert summary['defect_cases'] == 1
+    assert summary['defect_cases_multi'] == 0, 'one differing field is not a multi-field draft'

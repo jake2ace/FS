@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { api, post, fmtTime, REVIEW_LABEL } from '@/lib/api';
 import { useLiveRefresh } from '@/lib/useLiveRefresh';
+import { DefectsByField } from '@/components/DefectsByField';
 
 export default function TodayWorkCentre() {
   const router = useRouter();
@@ -163,7 +164,8 @@ export default function TodayWorkCentre() {
               <div className="triage-empty">Nothing is waiting on a person right now.</div>
             )}
           </div>
-          <div className="card">
+          <DefectsByField counts={s.defects_by_field || {}} cases={s.defect_cases || 0} multi={s.defect_cases_multi || 0} />
+          <div className="card" style={{ marginTop: 12 }}>
             <h2>Automation policy</h2>
             <p><span className="badge badge-info">{data.policy.name === 'strict' ? 'Strict' : 'Standard'}</span> <span className="muted small">AI decides; source evidence checked</span></p>
             <p className="small muted">{data.policy.description}</p>

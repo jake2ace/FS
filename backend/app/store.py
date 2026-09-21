@@ -230,6 +230,20 @@ class Store:
                 by_cat[r.category] = by_cat.get(r.category, 0) + 1
         bl = [r for r in res if r.category == "BL_COMPARISON"]
         open_review = [r for r in res if r.automation == "review_required" and not r.resolved]
+        # Which of the seven fields actually goes wrong. A supervisor asks this to find
+        # out where the paperwork keeps breaking - one carrier always getting the notify
+        # party wrong is a conversation to have, not twelve cases to fix one at a time.
+        # Resolved cases stay in the count on purpose: the point is where differences
+        # arise, not how many are still open.
+        by_field: dict[str, int] = {}
+        defect_cases = defect_cases_multi = 0
+        for r in bl:
+            if r.status == "MISMATCH" and r.defect_fields:
+                defect_cases += 1
+                if len(r.defect_fields) > 1:
+                    defect_cases_multi += 1
+                for f in r.defect_fields:
+                    by_field[f] = by_field.get(f, 0) + 1
         return {
             "total_emails": total_emails,
             "analysed": len(res),
@@ -245,4 +259,10 @@ class Store:
             "open_review_queue": len(open_review),
             "policy": self.policy,
             "ai_used_cases": sum(1 for r in res if r.ai_used),
+            "defects_by_field": by_field,
+            # How many drafts are wrong in more than one place. This is the number that
+            # changes what an operator does: if most bad drafts differ on two fields,
+            # "fix the one we spotted and resend" is the wrong habit.
+            "defect_cases": defect_cases,
+            "defect_cases_multi": defect_cases_multi,
         }

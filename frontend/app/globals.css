@@ -286,3 +286,31 @@ details summary { cursor: pointer; font-weight: 600; }
 
 /* Run history grows without bound, so it scrolls inside its card and the
    sticky header keeps the columns readable while scrolling. */
+
+/* The findings come first and the bars support them, so the bars are sized to the
+   leading group rather than to a round number: the question is which group is worst,
+   not what the absolute count is. One colour, because the groups are one series and
+   seven colours would imply a meaning they do not carry. */
+.finding { list-style: none; margin: 10px 0 14px; padding: 0; }
+.finding li { position: relative; padding: 0 0 0 12px; margin-bottom: 7px;
+              font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.finding li:last-child { margin-bottom: 0; }
+.finding li::before { content: ''; position: absolute; left: 0; top: 7px; width: 4px; height: 4px;
+                      border-radius: 50%; background: var(--accent); }
+.finding b { color: var(--ink); font-weight: 650; }
+
+.dbf { list-style: none; margin: 0; padding: 0; }
+.dbf > li { margin-bottom: 10px; }
+.dbf > li:last-child { margin-bottom: 0; }
+.dbf-row { display: grid; grid-template-columns: minmax(0, 104px) minmax(0, 1fr) 26px 34px;
+           align-items: center; gap: 9px; font-size: 12.5px; }
+.dbf-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbf-track { background: var(--line-soft); border-radius: 999px; height: 8px; overflow: hidden; }
+.dbf-bar { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.dbf-n { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; }
+.dbf-pc { text-align: right; font-variant-numeric: tabular-nums; color: var(--faint); font-size: 11.5px; }
+.dbf-parts { margin: 3px 0 0 113px; font-size: 11.5px; color: var(--faint); }
+@media (max-width: 640px) {
+  .dbf-row { grid-template-columns: minmax(0, 88px) minmax(0, 1fr) 24px 32px; gap: 7px; }
+  .dbf-parts { margin-left: 0; margin-top: 4px; }
+}

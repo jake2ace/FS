@@ -318,6 +318,7 @@ change the value in Render and redeploy; nothing in the repository or the fronte
 | `POST /api/cases/{id}/correction-draft` | editable correction email text - never sent by the system |
 | `GET /api/submission` · `GET /api/submission/status` | output in the official `sample_submission.json` shape (all 520 email ids) |
 | `GET /api/export.csv` | the operations report: one row per differing field, with the SI and BL readings side by side |
+| `GET /api/dashboard` → `summary.defects_by_field`, `defect_cases`, `defect_cases_multi` | how many comparisons differed on each field, and how many drafts were wrong in more than one place |
 | `GET /api/dashboard` · `GET/POST /api/settings/policy` · `GET /api/categories` | Today Work Centre data · automation policy · category enum |
 
 ## Outcome contract

@@ -245,7 +245,8 @@ export default function BatchRun() {
             happened to them.</span>
           </p>
           <OutcomeBar safe={sum.safe_completed || 0} draft={sum.awaiting_draft || 0}
-                      mismatch={sum.high_risk || 0} review={sum.needs_review || 0} />
+                      mismatch={sum.high_risk || 0} review={sum.needs_review || 0}
+                      total={sum.comparison_requests || 0} />
           <p className="small muted" style={{ marginTop: 14, marginBottom: 0 }}>
             <span>The rest were classified and closed - SI requests, invoice queries, operational
             notices and spam. They carry no documents to compare.</span>

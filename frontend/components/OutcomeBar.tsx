@@ -9,9 +9,18 @@ import { useState } from 'react';
 
 type Seg = { key: string; label: string; value: number; color: string; hint: string; person: boolean };
 
-export function OutcomeBar({ safe, draft, mismatch, review }:
-  { safe: number; draft: number; mismatch: number; review: number }) {
+export function OutcomeBar({ safe, draft, mismatch, review, total: requests }:
+  { safe: number; draft: number; mismatch: number; review: number; total?: number }) {
   const [hover, setHover] = useState<number | null>(null);
+
+  // The four outcomes above describe what the system decided. They stop adding up to the
+  // number of comparison requests the moment a person acts: confirming a safe case or
+  // flagging one takes it out of every one of them, and the bar quietly went from 220 to
+  // 215 with nothing to explain the difference. Whatever a person has taken over is that
+  // difference, so it is shown rather than dropped - a bar claiming to account for every
+  // request has to account for every request.
+  const decided = safe + draft + mismatch + review;
+  const withPerson = Math.max(0, (requests ?? decided) - decided);
 
   const segs: Seg[] = [
     { key: 'safe',     label: 'Safe completed',    value: safe,     color: '#1f7a4d', person: false,
@@ -22,6 +31,9 @@ export function OutcomeBar({ safe, draft, mismatch, review }:
       hint: 'at least one of the seven fields differs' },
     { key: 'review',   label: 'Needs review',      value: review,   color: '#cf8b1a', person: true,
       hint: 'the system would not decide - a person must' },
+    ...(withPerson > 0 ? [{ key: 'human', label: 'Taken over by a person', value: withPerson,
+      color: '#617f9a', person: true,
+      hint: 'confirmed, flagged or closed by hand - no longer one of the four above' } as Seg] : []),
   ];
 
   const total = segs.reduce((a, s) => a + s.value, 0) || 1;

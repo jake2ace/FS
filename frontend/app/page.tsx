@@ -11,6 +11,15 @@ export default function TodayWorkCentre() {
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [guide, setGuide] = useState(false);
+
+  useEffect(() => {
+    try { setGuide(window.localStorage.getItem('fs-guide-done') !== '1'); } catch { setGuide(true); }
+  }, []);
+  const closeGuide = () => {
+    setGuide(false);
+    try { window.localStorage.setItem('fs-guide-done', '1'); } catch {}
+  };
 
   const load = () => api('/api/dashboard').then(setData).catch((e) => setError(e.message));
   useEffect(() => {
@@ -35,6 +44,8 @@ export default function TodayWorkCentre() {
   if (!data) return <div className="empty">Loading…</div>;
   const s = data.summary;
   const run = data.last_run;
+  const example = (data.priority || []).find((p: any) => p.status === 'MISMATCH') || (data.priority || [])[0];
+  const needPerson = (s.high_risk || 0) + (s.needs_review || 0) + (s.awaiting_draft || 0);
   return (
     <>
       <div className="page-head">
@@ -49,6 +60,38 @@ export default function TodayWorkCentre() {
           </button>
         </div>
       </div>
+
+      {guide ? (
+        <div className="guide">
+          <div className="guide-steps">
+            {s.analysed === 0 ? (
+              <>
+                <div className="guide-step"><span className="guide-num">1</span><div>
+                  <b>Run the analysis</b><span>the system reads every email and both attachments</span></div></div>
+                <div className="guide-step"><span className="guide-num">2</span><div>
+                  <b>See what needs attention</b><span>it sorts the inbox by how urgent each case is</span></div></div>
+                <div className="guide-step"><span className="guide-num">3</span><div>
+                  <b>You decide</b><span>the system never acts on a case by itself</span></div></div>
+              </>
+            ) : (
+              <>
+                <div className="guide-step"><span className="guide-num">1</span><div>
+                  <b>Your work is already sorted</b><span>most urgent first - start at the top</span></div></div>
+                <div className="guide-step"><span className="guide-num">2</span><div>
+                  <b>Open a case to check it</b><span>every reading quotes the line it came from</span></div></div>
+                <div className="guide-step"><span className="guide-num">3</span><div>
+                  <b>You decide what happens</b><span>confirm, hand it on, or send it back</span></div></div>
+              </>
+            )}
+          </div>
+          {s.analysed === 0 ? (
+            <button className="btn btn-primary" onClick={startRun} disabled={starting}>Analyse the full inbox</button>
+          ) : example ? (
+            <Link href={`/cases/${example.email_id}`} className="btn btn-primary">Start with the most urgent →</Link>
+          ) : null}
+          <button className="guide-x" onClick={closeGuide} title="Hide this guide" aria-label="Hide this guide">✕</button>
+        </div>
+      ) : null}
 
       <div className="grid grid-7">
         <div className="card tile"><div className="tile-label">Comparison requests</div><div className="tile-value">{s.comparison_requests}</div><div className="tile-hint">of {s.analysed} analysed emails</div></div>
@@ -88,6 +131,28 @@ export default function TodayWorkCentre() {
           )}
         </div>
         <div>
+          <div className="triage" style={{ marginBottom: 12 }}>
+            <div className="triage-head">
+              <span className="n">{needPerson}</span>
+              <span className="t">cases are waiting on you</span>
+            </div>
+            <div className="triage-sub">Listed most urgent first. The system decided nothing on its own.</div>
+            {needPerson > 0 ? (
+              <>
+                <ul className="triage-list">
+                  <li><span className="dot" style={{ background: '#c23b2b' }} /><span className="n">{s.high_risk}</span>
+                    <span className="lbl"><b>Mismatch found</b><span>contact the carrier and correct the draft</span></span></li>
+                  <li><span className="dot" style={{ background: '#cf8b1a' }} /><span className="n">{s.needs_review}</span>
+                    <span className="lbl"><b>The system would not decide</b><span>read the evidence and make the call</span></span></li>
+                  <li><span className="dot" style={{ background: '#7a5ea8' }} /><span className="n">{s.awaiting_draft}</span>
+                    <span className="lbl"><b>Draft BL requested</b><span>send the document, then it can be compared</span></span></li>
+                </ul>
+                <Link href="/review" className="btn btn-primary">Open the review queue</Link>
+              </>
+            ) : (
+              <div className="triage-empty">Nothing is waiting on a person right now.</div>
+            )}
+          </div>
           <div className="card">
             <h2>Automation policy</h2>
             <p><span className="badge badge-info">{data.policy.name === 'strict' ? 'Strict' : 'Standard'}</span> <span className="muted small">AI decides; source evidence checked</span></p>

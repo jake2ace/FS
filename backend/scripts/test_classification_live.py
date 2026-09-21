@@ -40,7 +40,7 @@ async def run(args):
     if not (args.all or args.ids or args.cases):
         raise SystemExit('Choose --all, --ids, or --cases.')
     ai = EvaluationAI(mode='full', fallback_model='')
-    if not ai.enabled or ai.provider != 'deepseek':
+    if not ai.enabled:
         raise SystemExit('This evaluation requires the configured DeepSeek provider.')
     inbox = Inbox(config.DATA_DIR, config.DATA_ZIP)
     expected = {}

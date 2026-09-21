@@ -52,8 +52,8 @@ async def run(args):
     if output.exists():
         raise SystemExit('Use a new output path; previous evidence is preserved.')
     ai = RecordedAI()
-    if not ai.enabled or ai.provider != 'deepseek':
-        raise SystemExit('A configured DeepSeek provider is required.')
+    if not ai.enabled:
+        raise SystemExit('A configured AI provider is required.')
     senior = RecordedAI(tier='senior', provider=config.AI_SENIOR_PROVIDER,
         api_key=config.AI_SENIOR_API_KEY, model=config.AI_SENIOR_MODEL,
         timeout=config.AI_SENIOR_TIMEOUT, max_rpm=config.senior_max_rpm(),
@@ -61,9 +61,9 @@ async def run(args):
     ) if config.AI_SENIOR_MODEL and config.AI_SENIOR_API_KEY else None
     if args.require_thinking_chain and not (
         ai.thinking and ai.reasoning_effort == 'high' and senior and senior.enabled
-        and senior.provider == 'deepseek' and senior.thinking and senior.reasoning_effort == 'max'
+        and senior.provider == ai.provider and senior.thinking and senior.reasoning_effort == 'max'
     ):
-        raise SystemExit('Expected enabled DeepSeek primary high and senior max configuration.')
+        raise SystemExit('Expected an enabled primary (high) and senior (max) of the same provider.')
     inbox = Inbox(config.DATA_DIR, config.DATA_ZIP)
     emails = inbox.emails()
     if args.ids:

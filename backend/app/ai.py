@@ -43,6 +43,10 @@ def _extract_json(text: str) -> Optional[dict]:
 
 _PLACEHOLDERS = {"", "null", "none", "n/a", "na", "tba", "tbd", "???", "____", "-", "--"}
 
+# Project reasoning tiers -> Gemini thinkingLevel.  gemini-3.8-flash accepts low/medium/high only
+# ("minimal" is rejected), so the primary stage runs at medium and the senior reviewer at high.
+_GEMINI_THINKING_LEVEL = {"minimal": "low", "low": "low", "medium": "medium", "high": "medium", "max": "high"}
+
 
 def _clean_value(v: Any) -> Optional[str]:
     if v is None:
@@ -240,18 +244,45 @@ class AIClient:
                     raise ValueError('model output exceeded the token limit')
                 return "".join(part.get("text", "") for part in data.get("content", []) if part.get("type") == "text")
             if self.provider == "gemini":
+                # Gemini exposes reasoning depth as generationConfig.thinkingConfig.thinkingLevel.
+                # The project's own tiers map onto it so the primary and the senior reviewer stay
+                # meaningfully different models of the same family.
+                gen: dict[str, Any] = {"maxOutputTokens": max_tokens, "responseMimeType": "application/json"}
+                if model.startswith("gemini-2"):
+                    # The 2.x family predates thinkingLevel and only understands a token budget.
+                    gen["thinkingConfig"] = {"thinkingBudget": -1 if self.thinking else 0}
+                else:
+                    gen["thinkingConfig"] = {
+                        "thinkingLevel": _GEMINI_THINKING_LEVEL.get((self.reasoning_effort or "").lower(), "medium")
+                        if self.thinking else "low"
+                    }
+                if self.thinking:
+                    # Thinking tokens are drawn from the same budget as the answer.
+                    gen["maxOutputTokens"] = max(32768, max_tokens)
+                if not model.startswith("gemini-3"):
+                    # Gemini 3+ rejects sampling parameters; earlier models still honour them.
+                    gen["temperature"] = 0
                 r = await client.post(
                     f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                     headers={"x-goog-api-key": self.api_key, "Content-Type": "application/json"},
                     json={
                         "systemInstruction": {"parts": [{"text": system}]},
                         "contents": [{"role": "user", "parts": [{"text": user}]}],
-                        "generationConfig": {"temperature": 0, "maxOutputTokens": max_tokens, "responseMimeType": "application/json"},
+                        "generationConfig": gen,
                     },
                 )
                 r.raise_for_status()
                 data = r.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"]
+                cand = (data.get("candidates") or [{}])[0]
+                finish = cand.get("finishReason")
+                if finish == "MAX_TOKENS":
+                    raise ValueError("model output exceeded the token limit")
+                parts = (cand.get("content") or {}).get("parts") or []
+                # Thought summaries arrive as parts flagged thought=true and are never the answer.
+                text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+                if not text.strip():
+                    raise ValueError(f"model returned no answer text (finishReason={finish})")
+                return text
         raise RuntimeError(f"unsupported provider {self.provider}")
 
     # -- tasks ---------------------------------------------------------------

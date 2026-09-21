@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { OutcomeBar } from '@/components/OutcomeBar';
+import { RunDonut } from '@/components/RunDonut';
 import { api, post, fmtTime, type RunState } from '@/lib/api';
 
 export default function BatchRun() {
@@ -10,12 +12,14 @@ export default function BatchRun() {
   const [error, setError] = useState<string | null>(null);
   const [force, setForce] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sum, setSum] = useState<any>(null);
 
   const load = () =>
-    Promise.all([api<{ items: RunState[] }>('/api/runs'), api('/api/submission/status')])
-      .then(([r, s]) => {
+    Promise.all([api<{ items: RunState[] }>('/api/runs'), api('/api/submission/status'), api<any>('/api/dashboard')])
+      .then(([r, s, d]) => {
         setRuns(r.items);
         setSubStatus(s);
+        setSum(d.summary);
         setError(null);
       })
       .catch((e) => setError(e.message));
@@ -80,17 +84,21 @@ export default function BatchRun() {
           {latest ? (
             <>
               <div className="progress" style={{ margin: '8px 0' }}><div style={{ width: `${latest.total ? Math.round((latest.done / latest.total) * 100) : 0}%` }} /></div>
-              <dl className="kv">
-                <dt>Status</dt><dd>{latest.status}{latest.current ? ` · analysing ${latest.current}` : ''}</dd>
-                <dt>Progress</dt><dd>{latest.done} / {latest.total}</dd>
-                <dt>OK</dt><dd>{latest.ok}</dd>
-                <dt>Mismatch</dt><dd>{latest.mismatch}</dd>
-                <dt>Needs review</dt><dd>{latest.needs_review}</dd>
-                <dt>Other categories</dt><dd>{latest.not_applicable}</dd>
-                <dt>Failed</dt><dd>{latest.failed.length}</dd>
-                <dt>Started</dt><dd>{fmtTime(latest.started_at)}</dd>
-                <dt>Finished</dt><dd>{fmtTime(latest.finished_at)}</dd>
-              </dl>
+              <div className="run-split">
+                <dl className="kv">
+                  <dt>Status</dt><dd>{latest.status}{latest.current ? ` · analysing ${latest.current}` : ''}</dd>
+                  <dt>Progress</dt><dd>{latest.done} / {latest.total}</dd>
+                  <dt>OK</dt><dd>{latest.ok}</dd>
+                  <dt>Mismatch</dt><dd>{latest.mismatch}</dd>
+                  <dt>Needs review</dt><dd>{latest.needs_review}</dd>
+                  <dt>Other categories</dt><dd>{latest.not_applicable}</dd>
+                  <dt>Failed</dt><dd>{latest.failed.length}</dd>
+                  <dt>Started</dt><dd>{fmtTime(latest.started_at)}</dd>
+                  <dt>Finished</dt><dd>{fmtTime(latest.finished_at)}</dd>
+                </dl>
+                <RunDonut ok={latest.ok} mismatch={latest.mismatch} review={latest.needs_review}
+                          other={latest.not_applicable} failed={latest.failed.length} />
+              </div>
               {latest.status === 'running' ? <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => cancel(latest.run_id)}>Cancel run</button> : null}
               {latest.failed.length ? (
                 <div style={{ marginTop: 12 }}>
@@ -143,6 +151,27 @@ export default function BatchRun() {
           <p className="footer-note">Results live in the backend cache; <Link href="/review">open the review queue</Link> once the run finishes.</p>
         </div>
       </div>
+
+      {sum && sum.comparison_requests > 0 ? (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="card-head">
+            <h2>Where the work landed</h2>
+            <span className="small muted">{sum.comparison_requests} / {sum.analysed} emails</span>
+          </div>
+          <p className="small muted" style={{ marginTop: -2, marginBottom: 16 }}>
+            <b>{sum.comparison_requests}</b> of the <b>{sum.analysed}</b> emails{' '}
+            <span>asked for a Shipping Instruction and a draft Bill of Lading to be checked against
+            each other - those are the only ones that reach the document comparison. This is what
+            happened to them.</span>
+          </p>
+          <OutcomeBar safe={sum.safe_completed || 0} draft={sum.awaiting_draft || 0}
+                      mismatch={sum.high_risk || 0} review={sum.needs_review || 0} />
+          <p className="small muted" style={{ marginTop: 14, marginBottom: 0 }}>
+            <span>The rest were classified and closed - SI requests, invoice queries, operational
+            notices and spam. They carry no documents to compare.</span>
+          </p>
+        </div>
+      ) : null}
     </>
   );
 }

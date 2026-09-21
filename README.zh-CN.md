@@ -144,11 +144,10 @@ cd backend && AI_PROVIDER=none AI_MODE=off .venv/bin/pytest -q tests
 
 1. 打开 [render.com](https://render.com) → **New +** → **Blueprint**
 2. 选择这个仓库（`jake2ace/FS`），Render 会自动读取根目录的 `render.yaml`
-3. 提示填环境变量时，至少填这三个：
-   - `AI_PROVIDER` = `deepseek`
-   - `AI_API_KEY` = 密钥（**队长单独发给你，不要贴到任何聊天群或提交到仓库**）
-   - `AI_MODEL` = `deepseek-flash`
-   再把上面「本次比赛的完整配置」里剩下的变量补齐
+3. Render 只会问你要 **一个** 值：`AI_API_KEY`
+   —— 粘贴密钥（**队长单独发给你，不要贴到任何聊天群或提交到仓库**）。
+   其余全部变量（供应商、主模型与资深模型、思考强度、超时、限速、并发）都写死在 `render.yaml` 里，
+   不用手填，也不会漏填 —— 保证云端跑的就是本地测过的那套配置。
 4. 点 Deploy，等构建完成
 5. 验证：浏览器打开 `https://<你的服务名>.onrender.com/health`
    —— 返回里能看到服务状态、数据包状态、AI 配置状态

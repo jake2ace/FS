@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import CaseQueue from '@/components/CaseQueue';
+import CaseQueue, { type Source } from '@/components/CaseQueue';
 import FieldTable from '@/components/FieldTable';
 import ReviewWorkflow from '@/components/ReviewWorkflow';
 import { CategoryBadge, StatusBadge } from '@/components/StatusBadge';
@@ -19,6 +19,10 @@ const DOC_TYPE_LABEL: Record<string, string> = {
 };
 
 export default function CaseDetail() {
+  // The list this case was opened from. It decides both the breadcrumb and the rail,
+  // so the two cannot disagree about where the reader is.
+  const search = useSearchParams();
+  const source: Source = search.get('from') === 'inbox' ? 'inbox' : 'review';
   const params = useParams<{ id: string }>();
   const id = params?.id as string;
   const [email, setEmail] = useState<any>(null);
@@ -97,11 +101,15 @@ export default function CaseDetail() {
 
   return (
     <div className="case-layout">
-      <CaseQueue current={id} />
+      <CaseQueue current={id} source={source} />
       <div className="case-main">
       <div className="page-head">
         <div>
-          <div className="small muted"><Link href="/inbox">Smart Inbox</Link> / <span className="mono">{id}</span></div>
+          <div className="small muted">
+            {source === 'inbox'
+              ? <Link href="/inbox">Smart Inbox</Link>
+              : <Link href="/review">Review Queue</Link>} / <span className="mono">{id}</span>
+          </div>
           <h1>{rec.subject}</h1>
           <div className="sub">From {rec.from} · {rec.attachments.length} attachment{rec.attachments.length === 1 ? '' : 's'}</div>
         </div>

@@ -77,7 +77,7 @@ export default function ReviewQueue() {
               <tbody>
                 {list.map((r) => (
                   <tr key={r.email_id}>
-                    <td className="mono nowrap"><Link href={`/cases/${r.email_id}`}>{r.email_id}</Link></td>
+                    <td className="mono nowrap"><Link href={`/cases/${r.email_id}?from=review`}>{r.email_id}</Link></td>
                     <td><div>{r.headline}</div><div className="small muted truncate">{r.subject}</div></td>
                     <td><StatusBadge ui={r.ui_status} status={r.status} /></td>
                     <td className="small">
@@ -87,7 +87,7 @@ export default function ReviewQueue() {
                     </td>
                     <td className="right small">{pct(r.confidence)}</td>
                     <td className="right nowrap">
-                      <Link href={`/cases/${r.email_id}`} className="btn btn-sm">Open</Link>{' '}
+                      <Link href={`/cases/${r.email_id}?from=review`} className="btn btn-sm">Open</Link>{' '}
                       {tab === 'open' && r.processing_status !== 'PENDING_HUMAN_APPROVAL' ? (
                         <>
 

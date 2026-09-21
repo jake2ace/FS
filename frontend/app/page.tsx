@@ -96,7 +96,7 @@ export default function TodayWorkCentre() {
           {s.analysed === 0 ? (
             <button className="btn btn-primary" onClick={startRun} disabled={starting}>Analyse the full inbox</button>
           ) : example ? (
-            <Link href={`/cases/${example.email_id}`} className="btn btn-primary">Start with the most urgent →</Link>
+            <Link href={`/cases/${example.email_id}?from=review`} className="btn btn-primary">Start with the most urgent →</Link>
           ) : null}
           <button className="guide-x" onClick={closeGuide} title="Hide this guide" aria-label="Hide this guide">✕</button>
         </div>
@@ -133,7 +133,7 @@ export default function TodayWorkCentre() {
                         <div className="muted small truncate">{p.subject}</div>
                       </td>
                       <td><StatusBadge ui={p.ui_status} status={p.status} />{p.review_reason ? <div className="small muted">{REVIEW_LABEL[p.review_reason] || p.review_reason}</div> : null}</td>
-                      <td className="right"><Link href={`/cases/${p.email_id}`} className="btn btn-sm">Open</Link></td>
+                      <td className="right"><Link href={`/cases/${p.email_id}?from=review`} className="btn btn-sm">Open</Link></td>
                     </tr>
                   ))}
                 </tbody>
@@ -213,7 +213,7 @@ export default function TodayWorkCentre() {
                     <td className="mono nowrap">{a.email_id}</td>
                     <td className="muted small truncate">{a.subject}</td>
                     <td className="small">{a.suggested_action}</td>
-                    <td className="right"><Link href={`/cases/${a.email_id}`} className="btn btn-sm">Open</Link></td>
+                    <td className="right"><Link href={`/cases/${a.email_id}?from=review`} className="btn btn-sm">Open</Link></td>
                   </tr>
                 ))}
               </tbody>

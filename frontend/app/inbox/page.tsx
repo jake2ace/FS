@@ -52,7 +52,7 @@ export default function SmartInbox() {
     setBusy(id);
     try {
       await post(`/api/analyse/${id}?force=true&explain=true`);
-      router.push(`/cases/${id}`);
+      router.push(`/cases/${id}?from=inbox`);
     } catch (e: any) {
       setError(e.message);
       setBusy(null);
@@ -100,7 +100,7 @@ export default function SmartInbox() {
             <tbody>
               {visible.map((r) => (
                 <tr key={r.email_id}>
-                  <td className="mono nowrap">{r.analysed ? <Link href={`/cases/${r.email_id}`}>{r.email_id}</Link> : r.email_id}</td>
+                  <td className="mono nowrap">{r.analysed ? <Link href={`/cases/${r.email_id}?from=inbox`}>{r.email_id}</Link> : r.email_id}</td>
                   <td>
                     <div className="truncate" title={r.subject}>{r.subject}</div>
                     {r.headline ? <div className="small muted truncate">{r.headline}</div> : <div className="small muted truncate">{r.body_preview}</div>}
@@ -111,7 +111,7 @@ export default function SmartInbox() {
                   <td><StatusBadge ui={r.ui_status} status={r.status} /></td>
                   <td className="right small">{pct(r.confidence)}</td>
                   <td className="right nowrap">
-                    {r.analysed ? <Link href={`/cases/${r.email_id}`} className="btn btn-sm">Open</Link> : null}{' '}
+                    {r.analysed ? <Link href={`/cases/${r.email_id}?from=inbox`} className="btn btn-sm">Open</Link> : null}{' '}
                     <button className="btn btn-sm btn-primary" onClick={() => analyse(r.email_id)} disabled={busy === r.email_id}>
                       {busy === r.email_id ? 'Analysing…' : r.analysed ? 'Re-analyse' : 'Analyse'}
                     </button>

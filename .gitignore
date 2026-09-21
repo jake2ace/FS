@@ -20,7 +20,8 @@ npm-debug.log*
 .DS_Store
 .idea/
 .vscode/
-.claude/settings.local.json
+CLAUDE.md
+.claude/
 
 # docs: commit the confirmed workflow only; test records stay local
 # docs：只提交确认版流程图与流程说明，测试记录不入库

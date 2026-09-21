@@ -10,11 +10,20 @@ services:
     name: freightsentinel-api
     runtime: python
     rootDir: backend
-    plan: free
+    plan: standard
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     autoDeploy: true
+
+    # Analysis results, human decisions, generated BL copies and files a person
+    # added live under the mount path, so they survive a restart or a redeploy.
+    # 1 GB: a complete 520-email state is about 2 MB. The size can be raised
+    # later but never lowered, so it starts at the smallest useful value.
+    disk:
+      name: fs-cache
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
@@ -60,8 +69,17 @@ services:
         value: "0"
 
       # --- runtime / 运行参数 ---
+      # Where the store, the BL copies and the supplemental files are written.
+      # This must point inside the disk's mount path, or nothing is persisted.
+      # 必须指向磁盘挂载路径内，否则等于没挂盘。
+      - key: CACHE_DIR
+        value: /var/data/cache
+
+      # Parallel email analyses. The run waits on the model, not on this box:
+      # deepseek-flash allows 2500 concurrent connections, so the ceiling here is
+      # the single CPU, which saturates around this value.
       - key: BATCH_CONCURRENCY
-        value: "4"
+        value: "32"
       - key: CORS_ORIGINS
         value: "*"
       - key: AUTOMATION_POLICY

@@ -131,7 +131,7 @@ effects. They are listed here with the specific change each one needs.
 
 | Limit | Effect today | Next step |
 |---|---|---|
-| Ephemeral disk | Results, history, generated BL copies and files a person added do not survive a restart or a redeploy | The designed next step is a verified snapshot of all four to private object storage, restored and checked before a new instance serves requests. It is **designed, not built** - see the roadmap. Managed Postgres comes after that. |
+| Single instance | A service with a disk cannot run more than one instance, and deploys are no longer zero-downtime | Accepted deliberately: the store is in-process, so a second instance would hold a second, divergent copy of the same state. Managed Postgres is what removes this, and it is on the roadmap rather than in this build. |
 | 512 MB memory | `BATCH_CONCURRENCY` is pinned to 4 while several PDFs are parsed at once | The same pipeline over the same 520 emails finished in 10 min 6 s at concurrency 8 on a larger machine. Throughput is a paid instance plus a higher provider rate limit, not an application change. |
 | 15-minute sleep | Cold starts look like a broken prototype | Mitigated by the uptime monitor today; a paid instance removes it. |
 
@@ -466,10 +466,12 @@ inactivity on the free plan. The first request then returns 503 for 30–60 seco
 renders "0 emails" — indistinguishable from a system that does not work. An uptime monitor polling
 `/health` keeps the service warm during the judging window.
 
-**No persistent disk on the free plan.** Results live in the instance filesystem, so a redeploy or
-restart discards them. Auto-deploy is therefore a hazard during a full run: pushing to `main` restarts
-the service and wipes a 20-minute batch. The submission JSON is exported and stored outside the
-instance.
+**Results used to disappear on every deploy — fixed.** On the free plan there is no persistent disk, so
+the instance filesystem held the only copy: a redeploy or a restart discarded a completed run, and
+pushing to `main` during a batch destroyed it. The service now runs on a paid instance with a 1 GB
+persistent disk mounted at `/var/data`, and `CACHE_DIR` points inside it, so results, human decisions,
+generated BL copies and supplemental files survive a restart. The lesson was that "it works until
+someone deploys" is not a working prototype.
 
 ## Future roadmap
 
@@ -481,15 +483,12 @@ decisions, an administrator who can change configuration), rate limiting on writ
 who changed what and when. The read endpoints should not be open to everyone either: they contain
 customer names, cargo and ports.
 
-**State that survives a restart.** Results and history are written to Render's ephemeral disk today and
-do not survive a restart or a redeploy. Two steps are designed and not built. The first is a snapshot of
-the working state - the store, the generated BL copies and the files a person added - captured
-consistently, uploaded to private object storage, and verified file by file before a new instance is
-allowed to restore from it and serve requests; a pointer object updated with a conditional write is what
-stops an old instance from overwriting a newer state. The second is managed Postgres, which is what
-history, the audit trail and human conclusions really want, and where the access control system above has
-to keep its users and roles. Both are out of scope for the preliminary round on purpose: they change how
-the service starts up, and a half-finished version of that is worse than the honest limitation.
+**State beyond a single instance.** A persistent disk now keeps the store, the BL copies and the
+supplemental files across restarts, but it is still one JSON document owned by one process, which is why
+the service cannot scale past a single instance. Managed Postgres is the next step: it is what history,
+the audit trail and human conclusions really want, and where the access control system above has to keep
+its users and roles. It is out of scope for the preliminary round on purpose - it changes how the service
+starts up, and a half-finished version of that is worse than the honest limitation.
 
 **Reading harder documents.** Install Tesseract and Poppler on the backend host to enable the bounded
 local OCR recovery the pipeline already implements but cannot currently use on Render, and evaluate a

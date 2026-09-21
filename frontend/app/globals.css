@@ -43,7 +43,11 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; max-width: 100%; overflow-x: hidden; }
+/* No overflow-x:hidden here. It hides a layout problem instead of fixing one, and on a
+   phone it also blocks panning after the reader pinch-zooms, so anything at the right
+   edge becomes unreachable. Overflow is prevented at the source instead (min-width:0 on
+   grid and flex children, width:100% on the charts). */
+html, body { margin: 0; padding: 0; max-width: 100%; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter,
                "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;

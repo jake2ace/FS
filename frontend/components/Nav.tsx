@@ -67,8 +67,18 @@ export default function Nav() {
             </span>
           ) : health ? (
             <>
-              <span className="chip chip-dark" title={aiOn ? `${health.ai.provider} / ${health.ai.model}` : 'No AI provider configured - rule engine only'}>
-                <span className={`chip-dot ${aiOn ? '' : 'off'}`} /> AI {aiOn ? health.ai.provider : 'off (rules)'}
+              <span
+                className="chip chip-dark"
+                title={
+                  aiOn
+                    ? `${health.ai.provider} / ${health.ai.model}` +
+                      (health.ai.fallback_model ? ` (fallback ${health.ai.fallback_model})` : '') +
+                      (health.ai_senior?.enabled ? ` · senior review: ${health.ai_senior.model}` : ' · senior review off')
+                    : 'AI is unavailable; analysis requires a working provider'
+                }
+              >
+                <span className={`chip-dot ${aiOn ? '' : 'off'}`} /> AI {aiOn ? health.ai.provider : 'unavailable'}
+                {aiOn && health.ai_senior?.enabled ? ' + senior' : ''}
               </span>
               <button className="chip chip-dark" onClick={togglePolicy} title="Click to switch the automation policy" style={{ cursor: 'pointer' }}>
                 Policy: {health.policy === 'strict' ? 'Strict' : 'Standard'}

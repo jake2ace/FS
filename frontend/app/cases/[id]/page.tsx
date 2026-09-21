@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import FieldTable from '@/components/FieldTable';
+import ReviewWorkflow from '@/components/ReviewWorkflow';
 import { CategoryBadge, RiskBadge, StatusBadge } from '@/components/StatusBadge';
 import { api, post, pct, fmtTime, REVIEW_LABEL, type CaseResult } from '@/lib/api';
 
@@ -102,7 +103,7 @@ export default function CaseDetail() {
           <div className="sub">From {rec.from} · {rec.attachments.length} attachment{rec.attachments.length === 1 ? '' : 's'}</div>
         </div>
         <div className="toolbar" style={{ marginBottom: 0 }}>
-          <button className="btn btn-primary" onClick={analyse} disabled={busy}>{busy ? 'Working…' : r ? 'Re-analyse' : 'Analyse this email'}</button>
+          <button className="btn btn-primary" onClick={analyse} disabled={busy || !!r?.manual_review || !!r?.resolved || r?.processing_status === 'PENDING_HUMAN_APPROVAL'}>{busy ? 'Working…' : r ? 'Re-analyse' : 'Analyse this email'}</button>
         </div>
       </div>
       {error ? <div className="alert alert-risk" style={{ marginBottom: 12 }}>{error}</div> : null}
@@ -112,6 +113,7 @@ export default function CaseDetail() {
       ) : (
         <>
           <div className={`alert ${alertCls}`} style={{ marginBottom: 14 }}>
+            <div className="small muted">{r.manual_review ? 'Human conclusion' : 'Original attachment check'} · {r.status}</div>
             <div className="headline">{r.headline}</div>
             <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <StatusBadge ui={r.ui_status} status={r.status} />
@@ -119,7 +121,7 @@ export default function CaseDetail() {
               <RiskBadge risk={r.risk} />
               <span className="small">confidence {pct(r.confidence)}</span>
               <span className="small muted">· evidence {r.evidence_available ? 'available' : 'incomplete'}</span>
-              <span className="small muted">· {r.ai_used ? 'AI + rules' : 'rule engine'}</span>
+              <span className="small muted">· {r.decision_method === 'human' ? 'Human decision' : r.decision_method === 'ai' ? 'AI decision' : 'AI response needs review'}{r.ai_model && !r.manual_review ? ` · ${r.ai_model}` : ''}</span>
               {r.decision ? <span className="badge badge-neutral">decision: {r.decision.action}</span> : null}
               {r.resolved ? <span className="badge badge-safe">resolved</span> : null}
             </div>
@@ -138,6 +140,17 @@ export default function CaseDetail() {
             </div>
           ) : null}
 
+          {!!r.decision_chain?.length && <div className="card" style={{ marginTop: 14 }}>
+            <h2>Processing steps</h2>
+            <ol>{r.decision_chain.map((step, i) => <li key={i}>
+              <strong>{step.tier === 'primary' ? 'Primary AI' : step.tier === 'senior' ? 'Senior AI' : 'Human handling'}</strong>
+              {step.model ? ` · ${step.model}` : ''}{step.thinking ? ` · thinking ${step.reasoning_effort}` : ''} · {step.available === false ? 'Not configured / unavailable; handed to a person' : step.status || 'Review'}
+              {step.reason && <p className="small">{step.reason}</p>}
+              {step.unconfirmed_assessment && <p className="small">Unconfirmed AI observation: {step.unconfirmed_assessment}</p>}
+            </li>)}</ol>
+          </div>}
+          <ReviewWorkflow key={id} result={r} onChange={setResult} />
+
           <div className="grid grid-2" style={{ marginTop: 14 }}>
             <div className="card">
               <h2>Source evidence</h2>
@@ -146,12 +159,13 @@ export default function CaseDetail() {
                 <pre>{rec.body}</pre>
               </details>
               {r.docs.map((d, i) => (
-                <details key={d.path} style={{ marginTop: 8 }} onToggle={(e: any) => { if (e.currentTarget.open) loadDocText(i); }}>
+                <details key={d.path} style={{ marginTop: 8 }} onToggle={(e: any) => { if (e.currentTarget.open && (d.recovery === 'not_needed' || !d.recovery)) loadDocText(i); }}>
                   <summary>
                     {d.filename} · <span className="muted">{DOC_TYPE_LABEL[d.detected_type] || d.detected_type}</span> · {d.format.toUpperCase()} ·{' '}
                     {d.readable ? <span className="match-yes">readable</span> : <span className="match-no">unreadable</span>}
                     {d.read_error ? <span className="muted"> ({d.read_error})</span> : null}
                     {d.readable ? <span className="muted"> · extracted by {d.extraction_method}</span> : null}
+                    {d.recovery && d.recovery !== 'not_needed' ? <span className="muted"> · recovery: {d.recovery}</span> : null}
                   </summary>
                   <pre>{docText[i] !== undefined ? docText[i] : d.text_preview || '(loading…)'}</pre>
                 </details>
@@ -172,28 +186,42 @@ export default function CaseDetail() {
             </div>
 
             <div>
-              <div className="card">
-                <h2>Human decision</h2>
-                <p className="small muted">
-                  {r.automation === 'auto_completed'
-                    ? 'This case met the automation policy and was completed automatically. You can still confirm or escalate it.'
-                    : r.automation === 'review_required'
-                    ? 'This case is waiting for a person. Nothing is released automatically.'
-                    : 'No document decision is required for this category.'}
-                </p>
-                <input type="text" placeholder="Optional note for the audit trail" value={note} onChange={(e) => setNote(e.target.value)} style={{ width: '100%', marginBottom: 8 }} />
-                <div className="toolbar" style={{ marginBottom: 0 }}>
-                  <button className="btn btn-safe" disabled={busy} onClick={() => decide('confirm')}>Confirm</button>
-                  <button className="btn btn-danger" disabled={busy} onClick={() => decide('escalate')}>Escalate</button>
-                  <button className="btn" disabled={busy} onClick={() => decide('resolve')}>Mark resolved</button>
-                  {r.resolved ? <button className="btn btn-sm" disabled={busy} onClick={() => decide('reopen')}>Reopen</button> : null}
+              {r.senior_review ? (
+                <div className="card" style={{ marginBottom: 14 }}>
+                  <h2>Senior model review</h2>
+                  {r.senior_review.available ? (
+                    <>
+                      <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span className={`badge ${r.senior_review.agrees ? 'badge-safe' : 'badge-warn'}`}>
+                          {r.senior_review.outcome === 'NEEDS_REVIEW' ? 'Human review required' : 'Senior assessment validated'}
+                        </span>
+                        <span className="small muted">
+                          {r.senior_review.model} · opinion {r.senior_review.outcome || '–'} · confidence {pct(r.senior_review.confidence)}
+                        </span>
+                      </div>
+                      {r.senior_review.assessment ? <p className="small" style={{ marginTop: 8 }}>{r.senior_review.assessment}</p> : null}
+                      {r.senior_review.overrides.length ? (
+                        <div className="small" style={{ marginTop: 8 }}>
+                          <strong>Applied (shown to a person before release)</strong>
+                          <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>{r.senior_review.overrides.map((o, i) => <li key={i}>{o}</li>)}</ul>
+                        </div>
+                      ) : null}
+                      {r.senior_review.rejected.length ? (
+                        <div className="small muted" style={{ marginTop: 8 }}>
+                          <strong>Ignored - not supported by the documents</strong>
+                          <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>{r.senior_review.rejected.map((o, i) => <li key={i}>{o}</li>)}</ul>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="small muted" style={{ marginTop: 6 }}>The senior model could not be reached; this case was not double-checked and waits for a person.</p>
+                  )}
+                  <details style={{ marginTop: 8 }}>
+                    <summary className="small muted">Why the senior model was consulted</summary>
+                    <ul className="small" style={{ margin: '4px 0 0 16px', padding: 0 }}>{r.senior_review.triggers.map((t, i) => <li key={i}>{t}</li>)}</ul>
+                  </details>
                 </div>
-                {r.decision ? (
-                  <p className="small muted" style={{ marginTop: 8 }}>
-                    Last decision: <strong>{r.decision.action}</strong> by {r.decision.by} at {fmtTime(r.decision.at)}{r.decision.note ? ` - "${r.decision.note}"` : ''}
-                  </p>
-                ) : null}
-              </div>
+              ) : null}
               {r.category === 'BL_COMPARISON' ? (
                 <div className="card">
                   <h2>Correction email</h2>

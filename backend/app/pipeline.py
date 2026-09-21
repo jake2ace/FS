@@ -1,11 +1,7 @@
-"""The end-to-end analysis of one email:
+"""AI owns classification, document readings, comparisons and business outcomes.
 
-    classify -> load attachments -> identify SI / BL -> extract 7 fields
-    -> compare -> decide OK / MISMATCH / NEEDS_REVIEW -> explain
-
-AI is used for understanding (classification, document reading); deterministic
-code owns the comparison and the safety rules, so every outcome is
-reproducible and explainable.
+Python only loads files, validates response structure/source excerpts, routes
+technical failures and persists/displays the model's decision. No rules fallback.
 """
 from __future__ import annotations
 
@@ -13,329 +9,247 @@ import asyncio
 import time
 from datetime import datetime, timezone
 from typing import Optional
+from pydantic import ValidationError
 
 from .ai import AIClient
-from .classify import classify_rules
-from .compare import compare_fields, norm_party, norm_port
+from .ai_contract import Classification, Verdict, source_excerpt
 from .data import Inbox
-from .extract import extract_fields, missing_fields, parse_container_count, parse_weight_kg
-from .parsers import (DOC_BL, DOC_CI, DOC_COO, DOC_PL, DOC_SI, DOC_TYPE_LABELS, DOC_UNKNOWN, ParsedDoc,
-                      parse_attachment)
-from .schemas import FIELDS, FIELD_LABELS, CaseResult, DocInfo, FieldRow, FieldValue
+from .parsers import ParsedDoc, parse_attachment
+from .recovery import recover_document
+from .schemas import FIELDS, FIELD_LABELS, CaseResult, DocInfo, FieldRow, FieldValue, SeniorReview
 
-CATEGORY_LABELS = {
-    "BL_COMPARISON": "BL comparison request",
-    "SI_REQUEST": "New SI request",
-    "INVOICE_QUERY": "Invoice query",
-    "GENERAL": "General / operational notice",
-    "SPAM": "Spam",
-}
-CATEGORY_ACTIONS = {
-    "SI_REQUEST": "Route to the documentation team to prepare or file the shipping instruction. No BL comparison required.",
-    "INVOICE_QUERY": "Route to billing / finance. No BL comparison required.",
-    "GENERAL": "No document action required. Keep for reference.",
-    "SPAM": "Ignore. Do not open links or attachments.",
-}
-REVIEW_LABELS = {
-    "missing_attachment": "Missing attachment",
-    "wrong_doc_type": "Wrong document type",
-    "unreadable": "Unreadable document",
-    "missing_value": "Missing value in the documents",
-}
+CATEGORY_LABELS = {'BL_COMPARISON':'BL comparison request', 'SI_REQUEST':'New SI request',
+                   'INVOICE_QUERY':'Invoice query', 'GENERAL':'General / operational notice', 'SPAM':'Spam'}
+CATEGORY_ACTIONS = {'SI_REQUEST':'Route to the documentation team.', 'INVOICE_QUERY':'Route to billing / finance.',
+                    'GENERAL':'Keep for reference.', 'SPAM':'Ignore. Do not open links or attachments.'}
+REVIEW_LABELS = {'missing_attachment':'Missing attachment', 'wrong_doc_type':'Wrong document type',
+                 'unreadable':'Unreadable or uncertain input', 'missing_value':'Missing value in the documents'}
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+class AIUnavailable(RuntimeError):
+    """A technical failure; never manufacture a category or a successful result."""
 
 
-def _values_agree(field: str, a: Optional[str], b: Optional[str]) -> bool:
-    if a is None or b is None:
-        return a is None and b is None
-    if field in ("shipper", "consignee", "notify_party"):
-        return norm_party(a) == norm_party(b)
-    if field in ("port_of_loading", "port_of_discharge"):
-        return norm_port(a) == norm_port(b)
-    if field == "container_count":
-        return parse_container_count(a) == parse_container_count(b)
-    wa, wb = parse_weight_kg(a), parse_weight_kg(b)
-    return wa is not None and wb is not None and abs(wa - wb) <= 1.0
+def _now():
+    return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
 
-def _doc_info(doc: ParsedDoc, fields: dict[str, FieldValue], method: str) -> DocInfo:
-    return DocInfo(
-        path=doc.path, filename=doc.filename, format=doc.fmt, role_hint=doc.role_hint,
-        detected_type=doc.detected_type, readable=doc.readable, read_error=doc.error,
-        size_bytes=doc.size, text_chars=len(doc.text), text_preview=doc.text[:2500],
-        fields=fields, extraction_method=method,
-    )
+def _doc_info(doc: ParsedDoc) -> DocInfo:
+    # Parser type guesses and filename hints are deliberately not exposed as judgements.
+    return DocInfo(path=doc.path, filename=doc.filename, format=doc.fmt, detected_type='UNKNOWN',
+                   readable=doc.readable, read_error=doc.error, size_bytes=doc.size,
+                   text_chars=len(doc.text), text_preview=doc.text[:2500], recovery=doc.recovery,
+                   recovery_confidence=doc.recovery_confidence)
 
 
 class Analyser:
-    def __init__(self, inbox: Inbox, ai: AIClient):
-        self.inbox = inbox
-        self.ai = ai
+    def __init__(self, inbox: Inbox, ai: AIClient, senior_ai: Optional[AIClient] = None):
+        self.inbox, self.ai, self.senior_ai = inbox, ai, senior_ai
 
-    # ------------------------------------------------------------------ main
-    async def analyse(self, email: dict, policy: str = "standard", explain_with_ai: bool = False) -> CaseResult:
-        res = await self._analyse(email, policy=policy)
-        if explain_with_ai and res.category == "BL_COMPARISON":
-            try:
-                res = await self.polish_with_ai(res)
-            except Exception as exc:  # explanation polish must never break a result
-                res.warnings.append(f"AI explanation unavailable: {type(exc).__name__}")
-        return res
+    @staticmethod
+    def _trace(tier, ai, result):
+        return dict(tier=tier, provider=ai.provider, model=ai.model, category=result.category,
+                    thinking=ai.thinking, reasoning_effort=ai.reasoning_effort if ai.thinking else None,
+                    status=result.status, method=result.decision_method, reason=result.explanation,
+                    unconfirmed_assessment=result.unconfirmed_ai_assessment)
 
-    async def _analyse(self, email: dict, policy: str = "standard") -> CaseResult:
-        t0 = time.perf_counter()
-        warnings: list[str] = []
-        ai_used = False
+    async def _escalate(self, result, run_senior):
+        result.decision_chain = [self._trace('primary', self.ai, result)]
+        if result.status != 'NEEDS_REVIEW':
+            return result
+        if not self.senior_ai or not self.senior_ai.enabled:
+            result.decision_chain.append(dict(tier='senior', available=False, reason='Senior AI is not configured or unavailable.'))
+            result.decision_chain.append(dict(tier='human', status='pending'))
+            return result
+        senior = await run_senior(Analyser(self.inbox, self.senior_ai))
+        senior.decision_chain = result.decision_chain + [self._trace('senior', self.senior_ai, senior)]
+        senior.senior_review = SeniorReview(model=self.senior_ai.model,
+            available=senior.decision_method=='ai', triggers=[result.explanation],
+            category=senior.category, outcome=senior.status, assessment=senior.explanation,
+            category_confidence=senior.category_confidence, confidence=senior.confidence)
+        # A failed senior classification cannot erase an already evidenced primary category.
+        if senior.category is None and result.category is not None:
+            for name in ('category','category_confidence','category_reason','category_evidence','category_method','intent','docs'):
+                setattr(senior, name, getattr(result, name))
+        if senior.status == 'NEEDS_REVIEW':
+            senior.decision_chain.append(dict(tier='human', status='pending'))
+        return senior
 
-        # 1. classification --------------------------------------------------
-        rules = classify_rules(email)
-        category, cat_conf, cat_reason, intent, method = rules.category, rules.confidence, rules.reason, rules.intent, "rules"
-        if self.ai.enabled and (self.ai.mode == "full" or rules.confidence < 0.8):
-            ai_cls = await self.ai.classify_email(email)
-            if ai_cls:
-                ai_used = True
-                if ai_cls["category"] == rules.category:
-                    cat_conf = round(min(0.99, max(rules.confidence, ai_cls["confidence"]) + 0.05), 2)
-                    cat_reason = ai_cls["reason"] or cat_reason
-                    method = "ai+rules"
-                else:
-                    # the model reads the whole body; rules only see keywords. Prefer the model
-                    # unless it is clearly unsure and the rules are confident.
-                    if ai_cls["confidence"] >= 0.6 or rules.confidence < 0.7:
-                        warnings.append(f"Rule engine suggested {rules.category} ({rules.confidence:.2f}); AI chose {ai_cls['category']} ({ai_cls['confidence']:.2f}).")
-                        category, cat_conf, cat_reason, method = ai_cls["category"], round(min(ai_cls["confidence"], 0.85), 2), ai_cls["reason"], "ai"
-                    else:
-                        warnings.append(f"AI suggested {ai_cls['category']} ({ai_cls['confidence']:.2f}) but rules kept {rules.category}.")
-                        cat_conf = round(min(cat_conf, 0.75), 2)
-                        method = "rules"
-                if category == "BL_COMPARISON":
-                    intent = ai_cls["intent"] if ai_cls["intent"] != "other" else (rules.intent if rules.category == "BL_COMPARISON" else "other")
-            else:
-                warnings.append("AI classification unavailable; rule-based classification used.")
+    def require_ai(self):
+        if not self.ai.enabled:
+            raise AIUnavailable('AI is not enabled. Configure the provider and retry; no rule-based decision was made.')
 
-        base = dict(
-            email_id=email["email_id"], subject=email.get("subject", ""), sender=email.get("from", ""),
-            attachments=list(email.get("attachments") or []), category=category, category_confidence=cat_conf,
-            category_reason=cat_reason, category_method=method, intent=intent, analysed_at=_now(),
-        )
+    async def analyse(self, email: dict, policy: str = 'standard', explain_with_ai: bool = False) -> CaseResult:
+        result = await self._analyse_once(email, policy, explain_with_ai)
+        return await self._escalate(result, lambda senior: senior._analyse_once(email, policy, explain_with_ai))
 
-        # 2. non-comparison categories ------------------------------------------
-        if category != "BL_COMPARISON":
-            res = CaseResult(
-                **base, status="OK", has_defect=False, defect_fields=[], ui_status="No action", risk="none",
-                headline=CATEGORY_LABELS[category],
-                explanation=f"Classified as {CATEGORY_LABELS[category].lower()} ({cat_reason}). No shipping-document comparison is required for this email.",
-                suggested_action=CATEGORY_ACTIONS.get(category, "No action required."),
-                confidence=cat_conf, evidence_available=True, automation="none", ai_used=ai_used, warnings=warnings,
-            )
-            res.duration_ms = int((time.perf_counter() - t0) * 1000)
-            return res
-
-        # 3. attachments ------------------------------------------------------
-        docs: list[ParsedDoc] = []
-        for path in email.get("attachments") or []:
+    async def _analyse_once(self, email: dict, policy: str = 'standard', explain_with_ai: bool = False) -> CaseResult:
+        started = time.perf_counter()
+        if not self.ai.enabled:
+            return self._unclassified_review(email, 'AI is unavailable. A person must classify and review this email.', started)
+        classification = await self.ai.classify_email(email)
+        if classification is None:
+            return self._unclassified_review(email, 'AI classification was unavailable or invalid. No category was assigned; human review is required.', started)
+        try:
+            classified = Classification.model_validate(classification)
+            classified.validate_sources(email)
+        except (ValidationError, ValueError):
+            return self._unclassified_review(email, 'AI classification has invalid structure or source evidence. A person must determine the category.', started)
+        if classified.needs_review:
+            return self._unclassified_review(email, classified.reason, started)
+        base = self._base(email, classified)
+        if classified.category != 'BL_COMPARISON':
+            return CaseResult(**base, status='OK', ui_status='No action', risk='none',
+                              headline=CATEGORY_LABELS[classified.category], explanation=classified.reason,
+                              suggested_action=CATEGORY_ACTIONS[classified.category], confidence=classified.confidence,
+                              evidence_available=True, automation='none', ai_used=True,
+                              duration_ms=int((time.perf_counter()-started)*1000))
+        docs = []
+        for path in email.get('attachments') or []:
             try:
                 data = await asyncio.to_thread(self.inbox.read_bytes, path)
+                doc = await asyncio.to_thread(parse_attachment, path, data)
+                if not doc.readable:
+                    doc = await asyncio.to_thread(recover_document, doc, data)
             except FileNotFoundError:
-                docs.append(ParsedDoc(path=path, filename=path.rsplit("/", 1)[-1], fmt="missing", size=0,
-                                      readable=False, error="attachment file not found in the bundle"))
-                continue
-            docs.append(await asyncio.to_thread(parse_attachment, path, data))
+                doc = ParsedDoc(path=path, filename=path.rsplit('/',1)[-1], fmt='missing', size=0,
+                                readable=False, error='Attachment file not found')
+            except Exception as exc:
+                doc = ParsedDoc(path=path, filename=path.rsplit('/',1)[-1], fmt='unknown', size=0,
+                                readable=False, error=f'Attachment could not be read: {type(exc).__name__}')
+            docs.append(doc)
+        return await self._judge_once(email, docs, base=base, policy=policy, started=started)
 
-        if not docs:
-            if intent == "request_draft":
-                res = CaseResult(
-                    **base, status="OK", has_defect=False, defect_fields=[], ui_status="Awaiting draft BL", risk="none",
-                    headline="Draft BL requested - nothing to compare yet",
-                    explanation="The sender asks for the draft Bill of Lading to be sent for checking. No documents are attached, so there is nothing to compare at this stage.",
-                    suggested_action="Send the draft BL to the requester; the comparison runs once both documents are on file.",
-                    confidence=cat_conf, evidence_available=True, automation="none", ai_used=ai_used, warnings=warnings,
-                )
-            else:
-                res = CaseResult(
-                    **base, status="NEEDS_REVIEW", review_reason="missing_attachment",
-                    review_detail="The email asks for the SI and draft BL to be compared, but no attachment was received.",
-                    has_defect=False, defect_fields=[], ui_status="Needs review", risk="medium",
-                    headline="Needs review - missing attachment",
-                    explanation="This is a comparison request, but the email carries no attachments, so the SI and draft BL cannot be checked.",
-                    suggested_action="Ask the sender to resend the SI and the draft BL.",
-                    confidence=cat_conf, evidence_available=True, automation="review_required", ai_used=ai_used, warnings=warnings,
-                )
-            res.duration_ms = int((time.perf_counter() - t0) * 1000)
-            return res
+    def _base(self, email, classification=None):
+        return dict(pipeline_version=3, email_id=email['email_id'], subject=email.get('subject',''),
+                    sender=email.get('from',''), attachments=list(email.get('attachments') or []),
+                    category=classification.category if classification else 'BL_COMPARISON',
+                    category_confidence=classification.confidence if classification else 1,
+                    category_reason=classification.reason if classification else 'Recheck of the confirmed BL comparison case.',
+                    category_evidence=classification.evidence if classification else [],
+                    category_prompt_version=self.ai.CLASSIFY_PROMPT_VERSION if classification else None,
+                    category_method='ai' if classification else 'confirmed_case',
+                    intent=classification.intent if classification else 'verify_documents',
+                    analysed_at=_now(), decision_method='ai', ai_model=self.ai.model)
 
-        # 4. extraction (rules first, AI to confirm / fill) --------------------
-        doc_fields: list[dict[str, FieldValue]] = []
-        methods: list[str] = []
-        disagreements = 0
-        ai_filled = 0
-        for doc in docs:
-            if not doc.readable:
-                doc_fields.append({})
-                methods.append("none")
-                continue
-            fields = extract_fields(doc)
-            method = "rules"
-            need_ai = self.ai.enabled and (self.ai.mode == "full" or missing_fields(fields) or doc.detected_type == DOC_UNKNOWN or doc.fmt != "txt")
-            if need_ai:
-                ai_ex = await self.ai.extract_document(doc.text, doc.filename)
-                if ai_ex:
-                    ai_used = True
-                    method = "ai+rules"
-                    if doc.detected_type == DOC_UNKNOWN and ai_ex["doc_type"] != DOC_UNKNOWN:
-                        doc.detected_type = ai_ex["doc_type"]
-                    for fld in FIELDS:
-                        rv = fields.get(fld)
-                        av = ai_ex["fields"].get(fld, {})
-                        if (rv is None or rv.value is None) and av.get("value"):
-                            fields[fld] = FieldValue(value=av["value"], evidence=av.get("evidence"), label="(AI)", source="ai")
-                            ai_filled += 1
-                        elif rv is not None and rv.value is not None and av.get("value") and not _values_agree(fld, rv.value, av["value"]):
-                            disagreements += 1
-                            warnings.append(f"{doc.filename}: rules read {FIELD_LABELS[fld]} as '{rv.value}', AI read '{av['value']}'. Rule value kept.")
-                else:
-                    warnings.append(f"AI extraction unavailable for {doc.filename}; rule-based extraction used.")
-            doc_fields.append(fields)
-            methods.append(method)
+    def _handoff(self, base, detail, *, docs=None, started=None, method='ai_unavailable', assessment=None):
+        return CaseResult(**dict(base, decision_method=method), status='NEEDS_REVIEW',
+            review_reason='unreadable', review_detail=detail, ui_status='Needs review', risk='medium',
+            headline='Human review required', explanation=detail,
+            suggested_action='Review the original email and attachments, then record a human conclusion. AI approval is not required.',
+            confidence=0, evidence_available=False, automation='review_required', docs=docs or [],
+            ai_used=self.ai.enabled, warnings=[detail], processing_status='REVIEW_REQUIRED',
+            unconfirmed_ai_assessment=assessment,
+            duration_ms=int((time.perf_counter()-(started or time.perf_counter()))*1000))
 
-        doc_infos = [_doc_info(d, f, m) for d, f, m in zip(docs, doc_fields, methods)]
+    def _unclassified_review(self, email, detail, started):
+        base = dict(self._base(email), category=None, category_confidence=0,
+                    category_reason=detail, category_method='unavailable', intent='other',
+                    category_prompt_version=self.ai.CLASSIFY_PROMPT_VERSION)
+        return self._handoff(base, detail, started=started)
 
-        # 5. readability / document roles -------------------------------------
-        unreadable = [d for d in docs if not d.readable]
-        if unreadable:
-            names = "; ".join(f"{d.filename}: {d.error}" for d in unreadable)
-            return self._finish(base, t0, docs=doc_infos, status="NEEDS_REVIEW", reason="unreadable",
-                                detail=f"Could not read {names}.", headline="Needs review - document cannot be read",
-                                explanation=f"One or more attachments could not be read ({names}). The comparison cannot be made from unreadable input.",
-                                action="Request a readable copy of the affected document (text-based PDF, DOCX, XLSX or TXT).",
-                                confidence=cat_conf, ai_used=ai_used, warnings=warnings, policy=policy)
+    async def judge(self, email: dict, docs: list[ParsedDoc], *, base=None,
+                    policy='standard', started=None) -> CaseResult:
+        result = await self._judge_once(email, docs, base=base, policy=policy, started=started)
+        async def again(senior):
+            senior_base = dict(base, ai_model=senior.ai.model) if base else None
+            return await senior._judge_once(email, docs, base=senior_base, policy=policy, started=started)
+        return await self._escalate(result, again)
 
-        si_idx = next((i for i, d in enumerate(docs) if d.detected_type == DOC_SI), None)
-        bl_idx = next((i for i, d in enumerate(docs) if d.detected_type == DOC_BL), None)
-        # fall back to filename hints for unknown documents
-        if si_idx is None:
-            si_idx = next((i for i, d in enumerate(docs) if d.detected_type == DOC_UNKNOWN and d.role_hint == DOC_SI), None)
-        if bl_idx is None:
-            bl_idx = next((i for i, d in enumerate(docs) if d.detected_type == DOC_UNKNOWN and d.role_hint == DOC_BL and i != si_idx), None)
+    async def _judge_once(self, email: dict, docs: list[ParsedDoc], *, base=None,
+                          policy='standard', started=None) -> CaseResult:
+        started = started or time.perf_counter()
+        base = base or self._base(email)
+        infos = [_doc_info(d) for d in docs]
+        if not self.ai.enabled:
+            return self._handoff(base, 'AI is unavailable. Review the documents manually.', docs=infos, started=started)
+        payload = [{'index':i, 'filename':d.filename, 'readable':d.readable, 'error':d.error,
+                    'file_missing':d.fmt=='missing', 'text':d.text} for i,d in enumerate(docs)]
+        raw = await self.ai.verify_documents(email, payload, policy)
+        if raw is None:
+            return self._handoff(base, 'AI document analysis returned no usable result. The documents need human review; no match or mismatch was confirmed.', docs=infos, started=started)
+        try:
+            verdict = Verdict.model_validate(raw)
+            rows = self._validate_response(verdict, docs, infos)
+        except (ValidationError, ValueError) as exc:
+            # Rejected output is not repaired or replaced by a rule-based judgement.
+            detail = str(exc) if not isinstance(exc, ValidationError) else 'AI response schema is invalid: ' + '; '.join(
+                '.'.join(str(part) for part in e['loc']) + ' (' + e['type'] + ')'
+                for e in exc.errors(include_input=False, include_url=False)[:5])
+            return self._handoff(base, detail, docs=infos, started=started, method='response_validation',
+                                 assessment=str(raw.get('explanation') or '')[:2000])
+        status = verdict.status
+        ui, risk, automation = ('Safe to complete','low','auto_completed') if status=='OK' else (
+            ('High risk','high','review_required') if status=='MISMATCH' else ('Needs review','medium','review_required'))
+        return CaseResult(**base, status=status, review_reason=verdict.review_reason,
+            review_detail=verdict.explanation if status=='NEEDS_REVIEW' else None,
+            has_defect=status=='MISMATCH', defect_fields=verdict.defect_fields,
+            ui_status=ui, risk=risk, headline={'OK':'No mismatch detected','MISMATCH':'AI detected field mismatches',
+                                               'NEEDS_REVIEW':'AI requests human review'}[status],
+            explanation=verdict.explanation, suggested_action=verdict.suggested_action, confidence=verdict.confidence,
+            evidence_available=bool(rows) and all(r.si_evidence and r.bl_evidence for r in rows),
+            automation=automation, fields=rows, docs=infos, ai_used=True,
+            processing_status='NO_ACTION' if status=='OK' else 'REVIEW_REQUIRED',
+            duration_ms=int((time.perf_counter()-started)*1000))
 
-        wrong = [d for i, d in enumerate(docs) if d.detected_type in (DOC_CI, DOC_PL, DOC_COO)]
-        if si_idx is None or bl_idx is None:
-            if wrong:
-                w = wrong[0]
-                missing_role = "draft BL" if bl_idx is None else "SI"
-                return self._finish(base, t0, docs=doc_infos, status="NEEDS_REVIEW", reason="wrong_doc_type",
-                                    detail=f"{w.filename} is a {DOC_TYPE_LABELS[w.detected_type]}, not the {missing_role}.",
-                                    headline="Needs review - wrong document attached",
-                                    explanation=f"The attachment {w.filename} is a {DOC_TYPE_LABELS[w.detected_type].lower()}, so the {missing_role} needed for the comparison is not on file.",
-                                    action=f"Ask the sender for the correct {missing_role}.",
-                                    confidence=cat_conf, ai_used=ai_used, warnings=warnings, policy=policy)
-            missing_role = "draft BL" if bl_idx is None else "SI"
-            have = ", ".join(f"{d.filename} ({DOC_TYPE_LABELS.get(d.detected_type, d.detected_type).lower()})" for d in docs)
-            return self._finish(base, t0, docs=doc_infos, status="NEEDS_REVIEW", reason="missing_attachment",
-                                detail=f"The {missing_role} is missing. Received: {have}.",
-                                headline=f"Needs review - {missing_role} missing",
-                                explanation=f"Only {have} was received; the {missing_role} required for the comparison is not attached.",
-                                action=f"Ask the sender to send the {missing_role}.",
-                                confidence=cat_conf, ai_used=ai_used, warnings=warnings, policy=policy)
+    @staticmethod
+    def _validate_response(v: Verdict, docs: list[ParsedDoc], infos: list[DocInfo]) -> list[FieldRow]:
+        if sorted(d.index for d in v.documents) != list(range(len(docs))):
+            raise ValueError('AI must account for each received attachment exactly once.')
+        for reading in v.documents:
+            info, source = infos[reading.index], docs[reading.index]
+            info.detected_type = reading.doc_type
+            info.extraction_method = 'ai' if source.readable else 'none'
+            if reading.doc_type in ('SI','BL') and set(reading.fields) != set(FIELDS):
+                raise ValueError('AI must return all seven field entries for each SI/BL, including nulls.')
+            for field, value in reading.fields.items():
+                if field not in FIELDS:
+                    raise ValueError('AI returned an unsupported field name.')
+                if value.value is not None:
+                    if not value.value.strip() or not source_excerpt(value.evidence, source.text):
+                        raise ValueError(f'AI {FIELD_LABELS[field]} has no matching source excerpt in {source.filename}.')
+                if value.label and not source_excerpt(value.label, source.text):
+                    raise ValueError(f'AI field label is absent from {source.filename}.')
+                info.fields[field] = FieldValue(value=value.value, evidence=value.evidence, label=value.label, source='ai')
+        if v.status == 'NEEDS_REVIEW':
+            if v.review_reason is None or v.defect_fields:
+                raise ValueError('AI review status requires a reason and no confirmed defect list.')
+        elif v.review_reason is not None:
+            raise ValueError('AI result contains a contradictory review reason.')
+        pair = [[d for d in infos if d.detected_type==role and d.readable] for role in ('SI','BL')]
+        if v.status in ('OK','MISMATCH') and (any(not d.readable for d in docs) or any(len(x)!=1 for x in pair)):
+            raise ValueError('AI successful comparison requires one readable SI and one readable BL.')
+        if not all(len(x)==1 for x in pair):
+            if v.comparisons:
+                raise ValueError('AI supplied comparisons without one identified SI/BL pair.')
+            return []
+        if set(v.comparisons) != set(FIELDS):
+            raise ValueError('AI must return exactly seven field comparisons.')
+        si, bl = pair[0][0], pair[1][0]
+        rows = []
+        for field in FIELDS:
+            s, b, comparison = si.fields[field], bl.fields[field], v.comparisons[field]
+            if comparison.match is not None and (s.value is None or b.value is None):
+                raise ValueError('AI compared a field whose source value is null.')
+            rows.append(FieldRow(field=field, label=FIELD_LABELS[field], si_value=s.value, bl_value=b.value,
+                si_evidence=s.evidence, bl_evidence=b.evidence, match=comparison.match, reason=comparison.reason))
+        if v.status=='OK' and (v.defect_fields or not all(r.match is True for r in rows)):
+            raise ValueError('AI OK conflicts with its own field comparisons.')
+        if v.status=='MISMATCH':
+            false_fields = [r.field for r in rows if r.match is False]
+            if any(r.match is None for r in rows) or not false_fields or sorted(v.defect_fields)!=sorted(false_fields):
+                raise ValueError('AI MISMATCH conflicts with its own field comparisons.')
+        return rows
 
-        si_fields, bl_fields = doc_fields[si_idx], doc_fields[bl_idx]
-        si_doc, bl_doc = docs[si_idx], docs[bl_idx]
-        rows, defects = compare_fields(si_fields, bl_fields)
+    async def recheck_copy(self, result: CaseResult, revised: bytes, inbox, policy='standard') -> CaseResult:
+        si = next(d for d in result.docs if d.detected_type=='SI')
+        bl = next(d for d in result.docs if d.detected_type=='BL')
+        docs = [await asyncio.to_thread(parse_attachment, si.path, await asyncio.to_thread(inbox.read_bytes, si.path)),
+                await asyncio.to_thread(parse_attachment, bl.path, revised)]
+        email = dict(email_id=result.email_id, subject='Recheck corrected draft BL against the original SI',
+                     body='Verify all seven fields from these documents.', attachments=[si.path,bl.path])
+        return await self.judge(email, docs, policy=policy)
 
-        # 6. missing values ---------------------------------------------------
-        miss_si, miss_bl = missing_fields(si_fields), missing_fields(bl_fields)
-        if miss_si or miss_bl:
-            parts = []
-            if miss_si:
-                parts.append("SI: " + ", ".join(FIELD_LABELS[f] for f in miss_si))
-            if miss_bl:
-                parts.append("draft BL: " + ", ".join(FIELD_LABELS[f] for f in miss_bl))
-            detail = "Blank or unreadable fields - " + "; ".join(parts) + "."
-            return self._finish(base, t0, docs=doc_infos, rows=rows, status="NEEDS_REVIEW", reason="missing_value", detail=detail,
-                                headline="Needs review - required value missing",
-                                explanation=f"{detail} A blank value is not a discrepancy; the comparison cannot be completed without it.",
-                                action="Ask the customer / sender to complete the blank fields, then re-run the check.",
-                                confidence=cat_conf, ai_used=ai_used, warnings=warnings, policy=policy)
-
-        # 7. outcome ----------------------------------------------------------
-        extraction_conf = 0.95
-        if disagreements:
-            extraction_conf = 0.7
-        elif ai_filled:
-            extraction_conf = 0.85
-        if si_doc.fmt == "pdf" or bl_doc.fmt == "pdf":
-            extraction_conf = min(extraction_conf, 0.9)
-        confidence = round(min(cat_conf, extraction_conf), 2)
-        evidence_ok = all(r.si_evidence and r.bl_evidence for r in rows)
-
-        if defects:
-            labels = [FIELD_LABELS[f] for f in defects]
-            headline = f"High risk - {labels[0]} mismatch" if len(defects) == 1 else f"High risk - {len(defects)} field mismatches ({', '.join(labels)})"
-            detail_lines = []
-            for r in rows:
-                if r.match is False:
-                    detail_lines.append(f"{r.label}: SI says {r.si_value}; draft BL says {r.bl_value}.")
-            explanation = " ".join(detail_lines[:4]) + " Suggested action: review and align the draft BL to the verified SI."
-            action = "Review the highlighted fields and ask the carrier / agent to amend the draft BL to match the SI."
-            return self._finish(base, t0, docs=doc_infos, rows=rows, status="MISMATCH", defects=defects, headline=headline,
-                                explanation=explanation, action=action, confidence=confidence, evidence_ok=evidence_ok,
-                                ai_used=ai_used, warnings=warnings, policy=policy)
-
-        explanation = (f"No mismatch detected. All seven fields on the draft BL ({bl_doc.filename}) agree with the Shipping Instruction "
-                       f"({si_doc.filename}): shipper, consignee, notify party, ports, container count and gross weight.")
-        return self._finish(base, t0, docs=doc_infos, rows=rows, status="OK", headline="No mismatch detected",
-                            explanation=explanation, action="Safe to complete - confirm the draft BL with the carrier.",
-                            confidence=confidence, evidence_ok=evidence_ok, ai_used=ai_used, warnings=warnings,
-                            policy=policy)
-
-    # ---------------------------------------------------------------- finish
-    def _finish(self, base: dict, t0: float, docs: list[DocInfo], status: str, headline: str, explanation: str, action: str,
-                confidence: float, rows: Optional[list[FieldRow]] = None, defects: Optional[list[str]] = None,
-                reason: Optional[str] = None, detail: Optional[str] = None, evidence_ok: bool = True, ai_used: bool = False,
-                warnings: Optional[list[str]] = None, policy: str = "standard") -> CaseResult:
-        defects = defects or []
-        rows = rows or []
-        if status == "MISMATCH":
-            ui, risk, automation = "High risk", "high", "review_required"
-        elif status == "NEEDS_REVIEW":
-            ui, risk, automation = "Needs review", "medium", "review_required"
-        else:
-            threshold = 0.9 if policy == "strict" else 0.8
-            if confidence >= threshold and evidence_ok:
-                ui, risk, automation = "Safe to complete", "low", "auto_completed"
-            else:
-                ui, risk, automation = "Needs review", "medium", "review_required"
-                explanation += " Confidence is below the automation threshold, so the case is routed to a person instead of being auto-completed."
-        res = CaseResult(
-            **base, status=status, review_reason=reason, review_detail=detail, has_defect=bool(defects), defect_fields=defects,
-            ui_status=ui, risk=risk, headline=headline, explanation=explanation, suggested_action=action, confidence=confidence,
-            evidence_available=evidence_ok, automation=automation, fields=rows, docs=docs, ai_used=ai_used, warnings=warnings or [],
-        )
-        res.duration_ms = int((time.perf_counter() - t0) * 1000)
-        return res
-
-    async def polish_with_ai(self, res: CaseResult) -> CaseResult:
-        """Optional: let the model phrase the explanation (deterministic facts stay the source of truth)."""
-        if not self.ai.enabled or res.category != "BL_COMPARISON":
-            return res
-        facts = [f"Email {res.email_id}: '{res.subject}'", f"Outcome: {res.status}" + (f" ({res.review_reason}: {res.review_detail})" if res.review_reason else "")]
-        for r in res.fields:
-            facts.append(f"- {r.label}: SI='{r.si_value}' BL='{r.bl_value}' match={r.match} ({r.reason})")
-        out = await self.ai.explain_case("\n".join(facts))
-        if out and out.get("explanation"):
-            res.explanation = out["explanation"]
-            if out.get("suggested_action"):
-                res.suggested_action = out["suggested_action"]
-            res.ai_used = True
-        return res
-
-
-# ---------------------------------------------------------------------------
-# correction e-mail draft (template; only produced on explicit user request)
-# ---------------------------------------------------------------------------
 
 def build_correction_draft(res: CaseResult, email: dict) -> str:
     sender = email.get("from", "")

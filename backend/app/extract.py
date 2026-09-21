@@ -9,6 +9,7 @@ guessed.
 from __future__ import annotations
 
 import re
+import math
 from typing import Optional
 
 from .parsers import ParsedDoc
@@ -99,34 +100,35 @@ def parse_container_count(value: str) -> Optional[int]:
     if value is None:
         return None
     v = value.strip()
-    m = re.search(r"(\d+)\s*[xX×*]\s*\d{2}\s*'?", v)
-    if m:
-        return int(m.group(1))
-    m = re.fullmatch(r"\s*(\d{1,4})\s*(?:containers?|cntrs?|units?|boxes|x)?\s*", v, re.IGNORECASE)
-    if m:
-        return int(m.group(1))
-    m = re.match(r"\s*(\d{1,4})\b", v)
-    if m and not re.search(r"\d{5,}", v):
-        return int(m.group(1))
-    return None
+    # A count or explicit sum of container groups; never take the first number
+    # of an ambiguous string (e.g. "3 or 4", "3.5", or a container ID).
+    plain = re.fullmatch(r"(\d{1,4})\s*(?:containers?|cntrs?|units?|boxes|x)?", v, re.IGNORECASE)
+    if plain:
+        return int(plain.group(1))
+    groups = re.split(r"\s*\+\s*", v)
+    total = 0
+    for group in groups:
+        m = re.fullmatch(r"(\d{1,4})\s*[xX×*]\s*(?:20|40|45)\s*['’\"]?\s*(?:HC|HQ|GP|DC|FT|FCL)?", group, re.IGNORECASE)
+        if not m:
+            return None
+        total += int(m.group(1))
+    return total
 
 
 def parse_weight_kg(value: str) -> Optional[float]:
     if value is None:
         return None
     v = value.strip().upper()
-    m = re.search(r"(\d[\d,]*(?:\.\d+)?)", v)
+    m = re.fullmatch(r"(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(KG|KGS|KILOGRAMS?|MT|MTS|METRIC TONS?|METRIC TONNES?|TONS?|TONNES?|LB|LBS|POUNDS?)?(?::\s*[A-Z]+)?", v)
     if not m:
         return None
     num = float(m.group(1).replace(",", ""))
-    unit_part = v[m.end():] + " " + v[: m.start()]
-    if re.search(r"\bKGS?\b|KILO", unit_part):
-        return num
-    if re.search(r"\bMTS?\b|\bTONS?\b|\bTONNES?\b|METRIC", unit_part):
-        return num * 1000.0
-    if re.search(r"\bLBS?\b|POUND", unit_part):
-        return round(num * 0.45359237, 3)
-    return num  # no unit: assume kg (the column header says KG)
+    unit = m.group(2) or "KG"
+    if unit in ("MT", "MTS") or "TON" in unit:
+        num *= 1000.0
+    elif unit in ("LB", "LBS", "POUND", "POUNDS"):
+        num *= 0.45359237
+    return num if math.isfinite(num) else None
 
 
 def clean_party(value: str) -> str:
@@ -185,7 +187,9 @@ def extract_fields(doc: ParsedDoc) -> dict[str, FieldValue]:
             n = parse_container_count(value)
             val = str(n) if n is not None else None
         elif fld == "gross_weight_kg":
-            w = parse_weight_kg(value)
+            unit = re.search(r"\((KG|KGS|MT|MTS|LB|LBS)\)", label, re.IGNORECASE)
+            weight_text = value + " " + unit.group(1) if unit and re.fullmatch(r"[\d,.]+", value) else value
+            w = parse_weight_kg(weight_text)
             val = (str(int(w)) if w is not None and float(w).is_integer() else (str(w) if w is not None else None))
         else:
             val = value
@@ -204,4 +208,16 @@ def extract_fields(doc: ParsedDoc) -> dict[str, FieldValue]:
 
 
 def missing_fields(fields: dict[str, FieldValue]) -> list[str]:
-    return [f for f in FIELDS if f not in fields or fields[f].value is None]
+    return [f for f in FIELDS if f not in fields or not valid_value(f, fields[f].value)]
+
+
+def valid_value(field: str, value: Optional[str]) -> bool:
+    if is_placeholder(value):
+        return False
+    if field == "container_count":
+        n = parse_container_count(value)
+        return n is not None and n > 0
+    if field == "gross_weight_kg":
+        n = parse_weight_kg(value)
+        return n is not None and math.isfinite(n) and n > 0
+    return bool(value and any(c.isalnum() for c in value))

@@ -19,6 +19,14 @@ services:
         sync: false
       - key: AI_MODEL
         sync: false
+      - key: AI_FALLBACK_MODEL
+        sync: false
+      - key: AI_MAX_RPM
+        sync: false
+      - key: AI_SENIOR_MODEL
+        sync: false
+      - key: AI_SENIOR_MAX_RPM
+        sync: false
       - key: AI_MODE
         value: full
       - key: BATCH_CONCURRENCY

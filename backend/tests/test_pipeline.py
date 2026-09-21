@@ -1,9 +1,4 @@
-"""End-to-end checks against the official participant bundle (rules only, no AI).
-
-The 20 edge cases (email_501-520) are documented in the bundle README: five of
-each review_reason.  These tests pin that behaviour so a regression is caught
-before a deploy.
-"""
+"""Offline pipeline contract checks using fixture model responses, not model-accuracy tests."""
 import asyncio
 from pathlib import Path
 
@@ -11,6 +6,7 @@ import pytest
 
 from app import config
 from app.ai import AIClient
+from tests.fakes import FixtureAI
 from app.data import Inbox
 from app.parsers import parse_attachment
 from app.extract import extract_fields, missing_fields
@@ -27,7 +23,7 @@ def inbox():
 
 @pytest.fixture(scope="module")
 def analyser(inbox):
-    return Analyser(inbox, AIClient(provider="none", api_key="", mode="off"))
+    return Analyser(inbox, FixtureAI())
 
 
 def run(coro):
@@ -72,10 +68,11 @@ def test_known_mismatch_and_clean_case(inbox, analyser):
     assert clean.headline == "No mismatch detected"
 
 
-def test_request_for_draft_without_attachments_is_not_escalated(inbox, analyser):
+def test_request_for_draft_without_attachments_needs_review(inbox, analyser):
     res = run(analyser.analyse(inbox.get("email_003")))
-    assert res.category == "BL_COMPARISON" and res.status == "OK"
-    assert res.ui_status == "Awaiting draft BL"
+    assert res.category == "BL_COMPARISON" and res.status == "NEEDS_REVIEW"
+    assert res.review_reason == "missing_attachment"
+    assert res.automation == "review_required"
 
 
 def test_submission_shape_matches_sample(inbox, analyser):

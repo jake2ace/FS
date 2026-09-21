@@ -19,7 +19,7 @@ export default function ReviewQueue() {
   }, []);
 
   const list = useMemo(() => {
-    const bl = rows.filter((r) => r.category === 'BL_COMPARISON');
+    const bl = rows;
     let sel: EmailRow[];
     if (tab === 'open') sel = bl.filter((r) => r.automation === 'review_required' && !r.resolved);
     else if (tab === 'resolved') sel = bl.filter((r) => r.resolved);
@@ -40,8 +40,8 @@ export default function ReviewQueue() {
   };
 
   const counts = {
-    open: rows.filter((r) => r.category === 'BL_COMPARISON' && r.automation === 'review_required' && !r.resolved).length,
-    resolved: rows.filter((r) => r.category === 'BL_COMPARISON' && r.resolved).length,
+    open: rows.filter((r) => r.automation === 'review_required' && !r.resolved).length,
+    resolved: rows.filter((r) => r.resolved).length,
     auto: rows.filter((r) => r.category === 'BL_COMPARISON' && r.automation === 'auto_completed').length,
   };
 
@@ -74,14 +74,15 @@ export default function ReviewQueue() {
                   <td><StatusBadge ui={r.ui_status} status={r.status} /></td>
                   <td className="small">
                     {r.defect_fields && r.defect_fields.length ? r.defect_fields.join(', ') : r.review_reason ? REVIEW_LABEL[r.review_reason] || r.review_reason : '–'}
+                    {r.processing_status === 'PENDING_HUMAN_APPROVAL' ? <div className="badge badge-warn">Pending approval</div> : null}
                     {r.decision ? <div className="muted">decision: {r.decision.action}</div> : null}
                   </td>
                   <td className="right small">{pct(r.confidence)}</td>
                   <td className="right nowrap">
                     <Link href={`/cases/${r.email_id}`} className="btn btn-sm">Open</Link>{' '}
-                    {tab === 'open' ? (
+                    {tab === 'open' && r.processing_status !== 'PENDING_HUMAN_APPROVAL' ? (
                       <>
-                        <button className="btn btn-sm btn-safe" disabled={busy === r.email_id} onClick={() => quick(r.email_id, 'confirm')}>Confirm</button>{' '}
+
                         <button className="btn btn-sm btn-danger" disabled={busy === r.email_id} onClick={() => quick(r.email_id, 'escalate')}>Escalate</button>
                       </>
                     ) : tab === 'resolved' ? (

@@ -24,6 +24,8 @@ export interface DocInfo {
   readable: boolean;
   read_error: string | null;
   size_bytes: number;
+  recovery: string;
+  recovery_confidence: number;
   text_chars: number;
   text_preview: string;
   fields: Record<string, { value: string | null; evidence: string | null; label: string | null; source: string }>;
@@ -31,18 +33,35 @@ export interface DocInfo {
 }
 
 export interface Decision {
-  action: 'confirm' | 'escalate' | 'resolve' | 'reopen';
+  action: 'confirm' | 'escalate' | 'resolve' | 'reopen' | 'approve_revision' | 'reject_revision';
   note: string | null;
   by: string;
   at: string;
 }
 
+export interface SeniorReview {
+  model: string;
+  available: boolean;
+  triggers: string[];
+  category: string | null;
+  category_confidence: number;
+  outcome: string | null;
+  agrees: boolean | null;
+  overrides: string[];
+  rejected: string[];
+  equivalent_fields: string[];
+  assessment: string;
+  confidence: number;
+}
+
 export interface CaseResult {
+  decision_method: string;
+  ai_model: string | null;
   email_id: string;
   subject: string;
   sender: string;
   attachments: string[];
-  category: Category;
+  category: Category | null;
   category_confidence: number;
   category_reason: string;
   category_method: string;
@@ -63,11 +82,18 @@ export interface CaseResult {
   fields: FieldRow[];
   docs: DocInfo[];
   ai_used: boolean;
+  senior_review: SeniorReview | null;
+  manual_review?: { category: Category; status: Status; note: string; by: string; complete: boolean; at: string } | null;
+  decision_chain?: { tier: string; thinking?: boolean; reasoning_effort?: string; provider?: string; model?: string; status?: string; reason?: string; available?: boolean; unconfirmed_assessment?: string }[];
+  unconfirmed_ai_assessment?: string | null;
   warnings: string[];
   analysed_at: string;
   duration_ms: number;
   decision: Decision | null;
   resolved: boolean;
+  processing_status: string;
+  working_report: any | null;
+  history: any[];
 }
 
 export interface EmailRow {
@@ -78,7 +104,7 @@ export interface EmailRow {
   attachments: string[];
   body_preview: string;
   analysed: boolean;
-  category?: Category;
+  category?: Category | null;
   category_confidence?: number;
   status?: Status;
   ui_status?: string;
@@ -89,6 +115,7 @@ export interface EmailRow {
   confidence?: number;
   automation?: string;
   resolved?: boolean;
+  processing_status?: string;
   decision?: Decision | null;
   analysed_at?: string;
   ai_used?: boolean;

@@ -250,3 +250,95 @@ read.
 Offline workflow tests use an explicit fake model in `backend/tests/fakes.py`; they do not call paid APIs
 and do not prove model accuracy. Full-inbox live-run records are kept on the development machine and are
 not part of this repository.
+
+## Validation evidence
+
+Two independent full-inbox runs of the same pipeline and the same configuration, on different
+machines, produced nearly identical results.
+
+| | Local (2026-09-20) | Cloud — Render (2026-09-21) |
+|---|---|---|
+| Emails processed | 520 / 520 | 520 / 520 |
+| Wall time | 606 s (concurrency 8) | 20 min 27 s (concurrency 4) |
+| Real API calls | 966 (740 primary + 226 senior) | 962 (740 primary + 222 senior) |
+| Technical failures | 0 | **0** |
+| Non-comparison emails (classified only) | 300 | 300 |
+| `OK` | 60 | 61 |
+| `MISMATCH` | 49 | 48 |
+| `NEEDS_REVIEW` | 111 | 111 |
+
+**One email out of 520 decided differently between the two runs.** Classification of the 300
+non-comparison emails was identical. The cloud run is the deployed stack end to end: browser →
+Vercel → Render → DeepSeek.
+
+Review reasons in the cloud run: `missing_attachment` 96, `unreadable` 6, `wrong_doc_type` 5,
+`missing_value` 4 — 111 in total, matching the `NEEDS_REVIEW` count exactly. `has_defect: true`
+appears on exactly the 48 `MISMATCH` cases.
+
+`GET /api/submission` was checked field by field against the organisers' `sample_submission.json`:
+520 keys, no gaps or extras, the same five fields on every record, same types.
+
+**What this does and does not show.** It shows the pipeline runs to completion on real
+infrastructure, that failures are visible rather than silently converted into passes, and that the
+result is reproducible across environments. It does **not** establish business accuracy — no answer
+key was read, and the known issues below are unresolved.
+
+## Challenges faced
+
+**Field labels versus field values.** Three emails (383, 411, 498) were reported as a consignee
+mismatch where the SI says `To the Order of:` and the BL says `Consignee:` with the same company and
+address. The model treated a difference in wording of the label as a substantive difference in the
+value. The brief requires aligning the same field across different labels, so these are suspected
+false positives. They are recorded rather than quietly corrected: the first-pass answers were
+confident, so the senior stage — which only reviews uncertain cases — never saw them. **More thinking
+effort does not remove a confident wrong answer.**
+
+**A technical failure must not overwrite a valid finding.** On two emails the senior pass ran ~150 s
+and exceeded the 32,768-token output limit, returning nothing usable. The case was correctly sent to
+a human, but the handoff replaced the first pass's accurate `missing_value` with a generic
+`unreadable`, making the reason wrong and losing the structured readings. Escalating safely is not
+enough if the escalation destroys what was already known.
+
+**Refusing to guess is a feature, not an error path.** Invalid JSON, quoted evidence that cannot be
+found in the source, incomplete field sets — each is rejected by validation and sent to review with
+the reason. The temptation is to fall back to rules and return something; the system does not, because
+a rules-only `OK` is indistinguishable from a verified `OK` to the person reading the report.
+
+**Configuration drift between local and cloud.** `AI_SENIOR_PROVIDER` defaults to `openai`. Deployed
+without it, the senior provider no longer matches the primary, the API key is not reused, and the
+second-pass review **disables itself without raising an error** — the service reports healthy and
+produces plausible output while quietly running a different pipeline than the one that was tested.
+Every variable is now pinned in `render.yaml` so the deployment cannot silently diverge from the
+tested configuration.
+
+**Cold starts look exactly like a broken prototype.** The backend sleeps after 15 minutes of
+inactivity on the free plan. The first request then returns 503 for 30–60 seconds, and the dashboard
+renders "0 emails" — indistinguishable from a system that does not work. An uptime monitor polling
+`/health` keeps the service warm during the judging window.
+
+**No persistent disk on the free plan.** Results live in the instance filesystem, so a redeploy or
+restart discards them. Auto-deploy is therefore a hazard during a full run: pushing to `main` restarts
+the service and wipes a 20-minute batch. The submission JSON is exported and stored outside the
+instance.
+
+## Future roadmap
+
+**Correctness first.** Define the boundary between a field's label and its value in the prompt, and
+re-test against the three suspected false positives before anything else. Keep the first pass's valid
+findings when the senior pass fails technically, and show the technical failure as its own reason
+instead of overwriting a good one.
+
+**Reading harder documents.** Install Tesseract and Poppler on the backend host to enable the bounded
+local OCR recovery the pipeline already implements but cannot currently use on Render, and evaluate a
+vision-capable model for scanned and image-only pages.
+
+**Real inbox, real storage.** Replace the static participant bundle with IMAP or Microsoft Graph, and
+the JSON result cache with Postgres so history, audit trail and human decisions survive a restart.
+
+**Learning from the review queue.** Every human correction already records the confirmed category,
+outcome, defect fields and a note. Feeding those back as evaluation cases turns the review queue into
+a regression suite that grows as the system is used.
+
+**A measurable baseline.** Automate the full-inbox run and the structural audit in CI so any prompt or
+model change is scored against the previous run before it is adopted, rather than judged by a single
+sample.

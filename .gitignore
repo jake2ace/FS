@@ -29,3 +29,7 @@ docs/*
 !docs/FreightSentinel-确认版流程图.svg
 !docs/FreightSentinel-确认版流程图.png
 !docs/确认版流程说明.md
+
+# 本地测试结果与官方格式导出，不入库
+测试结果/
+submission.json

@@ -390,11 +390,17 @@ treated `To the Order of:` versus `Consignee:` as a value mismatch even though t
 was identical. The current deployed run classifies all three as `OK` and explains that the label wording
 differs while the party value agrees.
 
-**A technical failure must not overwrite a valid finding — still open.** Four senior-review calls in
-the current cloud snapshot exceeded the model output limit. The cases were sent to a person, but the
-handoff replaced a more accurate primary finding with generic `unreadable` on `email_507`,
-`email_516`, `email_518`, and `email_520`. Escalating safely is not enough if the escalation destroys
-what was already known.
+**A technical failure must not overwrite a valid finding — fixed.** Senior-review calls that exceed the
+model output limit used to hand the case over with a generic `unreadable` reason, discarding the more
+accurate finding the primary pass had already produced. Escalating safely is not enough if the escalation
+destroys what was already known, so a senior call that fails for technical reasons now keeps the primary
+finding and records the failure beside it. `backend/tests/test_senior_handoff.py` covers the regression.
+One senior call still hits the limit in the current run, on `email_507`, and that case now keeps its
+`missing_attachment` reason.
+
+**A human saving progress must not restate the reason — fixed.** Recording partial human handling wrote
+`missing_value` over whatever reason the case already had. Saving progress is not a new finding, so the
+established reason is now kept.
 
 **Refusing to guess is a feature, not an error path.** Invalid JSON, quoted evidence that cannot be
 found in the source, incomplete field sets — each is rejected by validation and sent to review with

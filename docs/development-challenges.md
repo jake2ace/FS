@@ -80,8 +80,9 @@ problems solved along the way:
 - Requiring evidence to be exact, contiguous quotations from the body, with no paraphrase and no
   ellipses.
 
-**Result.** Two consecutive full runs over all 520 emails reproduced each other exactly - the
-classification, the seven-field comparison and the escalation decisions were identical both times.
+**Result.** Two consecutive full runs over all 520 emails agreed on the category distribution, the
+number of emails entering comparison, and the mismatch and escalation counts. Both runs are recorded
+email by email and can be re-checked.
 
 ---
 

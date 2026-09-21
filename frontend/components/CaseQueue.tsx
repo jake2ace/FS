@@ -20,7 +20,11 @@ export type Source = 'review' | 'inbox';
 
 /** Cases a person still has to decide on, in the same order as the Review Queue page. */
 function order(a: EmailRow, b: EmailRow) {
+  // Escalated first, matching the Review Queue page: the rail and the list it came from
+  // must not disagree about what comes next.
+  const escalated = (r: EmailRow) => (r.decision?.action === 'escalate' ? 0 : 1);
   return (
+    (escalated(a) - escalated(b)) ||
     (RISK_ORDER[a.risk || 'none'] - RISK_ORDER[b.risk || 'none']) ||
     ((b.defect_fields?.length || 0) - (a.defect_fields?.length || 0)) ||
     a.email_id.localeCompare(b.email_id)

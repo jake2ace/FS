@@ -32,7 +32,17 @@ export default function ReviewQueue() {
     if (tab === 'open') sel = bl.filter((r) => r.automation === 'review_required' && !r.resolved);
     else if (tab === 'resolved') sel = bl.filter((r) => r.resolved);
     else sel = bl.filter((r) => r.automation === 'auto_completed');
-    return sel.sort((a, b) => (RISK_ORDER[a.risk || 'none'] - RISK_ORDER[b.risk || 'none']) || ((b.defect_fields?.length || 0) - (a.defect_fields?.length || 0)) || a.email_id.localeCompare(b.email_id));
+    // A case someone escalated sorts above everything else in the open list. Escalating
+    // used to only write a line into the record, which made the word a promise the
+    // product did not keep: nothing moved, nothing was routed, and a supervisor opening
+    // the queue saw it exactly where it was before. Sorting it to the top is the smallest
+    // thing that makes the word true.
+    const escalated = (r: EmailRow) => (r.decision?.action === 'escalate' ? 0 : 1);
+    return sel.sort((a, b) =>
+      (tab === 'open' ? escalated(a) - escalated(b) : 0) ||
+      (RISK_ORDER[a.risk || 'none'] - RISK_ORDER[b.risk || 'none']) ||
+      ((b.defect_fields?.length || 0) - (a.defect_fields?.length || 0)) ||
+      a.email_id.localeCompare(b.email_id));
   }, [rows, tab]);
 
   const quick = async (id: string, action: string) => {
@@ -83,7 +93,9 @@ export default function ReviewQueue() {
                     <td className="small">
                       {r.defect_fields && r.defect_fields.length ? r.defect_fields.join(', ') : r.review_reason ? REVIEW_LABEL[r.review_reason] || r.review_reason : '–'}
                       {r.processing_status === 'PENDING_HUMAN_APPROVAL' ? <div className="badge badge-warn">Pending approval</div> : null}
-                      {r.decision ? <div className="muted">decision: {r.decision.action}</div> : null}
+                      {r.decision?.action === 'escalate'
+                        ? <div><span className="badge badge-warn">Escalated</span></div>
+                        : r.decision ? <div className="muted">decision: {r.decision.action}</div> : null}
                     </td>
                     <td className="right small">{pct(r.confidence)}</td>
                     <td className="right nowrap">

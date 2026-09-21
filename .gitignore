@@ -29,6 +29,14 @@ docs/*
 !docs/FreightSentinel-确认版流程图.svg
 !docs/FreightSentinel-确认版流程图.png
 !docs/确认版流程说明.md
+!docs/FreightSentinel-技术栈架构图.html
+!docs/FreightSentinel-技术栈架构图.svg
+!docs/FreightSentinel-技术栈架构图.png
+!docs/FreightSentinel-tech-stack.html
+!docs/FreightSentinel-tech-stack.svg
+!docs/FreightSentinel-tech-stack.png
+!docs/开发问题与解决记录.md
+!docs/development-challenges.md
 
 # 本地测试结果与官方格式导出，不入库
 测试结果/

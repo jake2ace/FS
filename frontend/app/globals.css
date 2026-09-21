@@ -234,17 +234,20 @@ details summary { cursor: pointer; font-weight: 600; }
    going back to the queue page every time. */
 .case-layout { display: grid; grid-template-columns: 262px minmax(0, 1fr); gap: 20px; align-items: start; }
 .case-main { min-width: 0; }
-.cq { position: sticky; top: 78px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 14px 12px; }
+.cq { position: sticky; top: 78px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 14px 12px; min-width: 0; }
+/* Grid items default to min-width:auto, so a long no-wrap subject would widen
+   the whole column past the screen once the layout collapses to one column. */
 .cq-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 11px; }
 .cq-title { font-weight: 600; font-size: 13.5px; }
 .cq-count { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .cq-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
 .cq-nav .btn { justify-content: center; padding-left: 8px; padding-right: 8px; }
 .cq-list { max-height: calc(100vh - 290px); overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
-.cq-item { display: block; padding: 8px 10px; margin-bottom: 4px; border-radius: var(--radius-sm); border: 1px solid transparent; text-decoration: none; color: inherit; }
+.cq-item { display: block; min-width: 0; padding: 8px 10px; margin-bottom: 4px; border-radius: var(--radius-sm); border: 1px solid transparent; text-decoration: none; color: inherit; }
 .cq-item:hover { background: var(--card-2); text-decoration: none; }
 .cq-item.is-current { background: var(--accent-soft); border-color: var(--accent-line); }
-.cq-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cq-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.cq-row .cq-id { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
 .cq-id { font-size: 12px; }
 .cq-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
 .cq-empty { font-size: 12.5px; color: var(--muted); padding: 6px 2px 2px; }

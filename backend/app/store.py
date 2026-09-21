@@ -178,7 +178,9 @@ class Store:
         r.defect_fields = review.defect_fields
         r.has_defect = review.status == 'MISMATCH'
         r.fields = []  # Original AI readings remain in the history snapshot.
-        r.review_reason = 'missing_value' if review.status == 'NEEDS_REVIEW' else None
+        # Saving progress is not a new finding: keep the reason already established for this case
+        # (missing_attachment / wrong_doc_type / unreadable) instead of restating it as missing_value.
+        r.review_reason = (r.review_reason or 'missing_value') if review.status == 'NEEDS_REVIEW' else None
         r.review_detail = review.note.strip() if review.status == 'NEEDS_REVIEW' else None
         r.resolved = review.complete
         r.processing_status = 'RESOLVED_BY_HUMAN' if review.complete else 'REVIEW_REQUIRED'

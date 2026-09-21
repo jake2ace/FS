@@ -21,7 +21,13 @@ export default function TodayWorkCentre() {
     try { window.localStorage.setItem('fs-guide-done', '1'); } catch {}
   };
 
-  const load = () => api('/api/dashboard').then(setData).catch((e) => setError(e.message));
+  const load = () =>
+    api('/api/dashboard')
+      .then((d) => {
+        setData(d);
+        setError(null);   // a recovered request clears the previous failure
+      })
+      .catch((e) => setError(e.message));
   useEffect(() => {
     load();
     const t = setInterval(load, 8000);

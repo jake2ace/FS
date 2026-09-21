@@ -1,4 +1,4 @@
-"""Map internal case results to the official self-evaluation shape
+"""Map internal case results to the official submission shape
 (sample_submission.json): one object per email_id with
 category / status / review_reason / defect_fields / has_defect.
 """

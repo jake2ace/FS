@@ -20,7 +20,13 @@ export default function SmartInbox() {
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const load = () => api<{ items: EmailRow[] }>('/api/emails?limit=2000').then((d) => setRows(d.items)).catch((e) => setError(e.message));
+  const load = () =>
+    api<{ items: EmailRow[] }>('/api/emails?limit=2000')
+      .then((d) => {
+        setRows(d.items);
+        setError(null);   // a recovered request clears the previous failure
+      })
+      .catch((e) => setError(e.message));
   useEffect(() => {
     load();
   }, []);

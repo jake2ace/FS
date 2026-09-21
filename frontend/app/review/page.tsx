@@ -13,7 +13,13 @@ export default function ReviewQueue() {
   const [tab, setTab] = useState<'open' | 'resolved' | 'auto'>('open');
   const [busy, setBusy] = useState<string | null>(null);
 
-  const load = () => api<{ items: EmailRow[] }>('/api/results').then((d) => setRows(d.items)).catch((e) => setError(e.message));
+  const load = () =>
+    api<{ items: EmailRow[] }>('/api/results')
+      .then((d) => {
+        setRows(d.items);
+        setError(null);   // a recovered request clears the previous failure
+      })
+      .catch((e) => setError(e.message));
   useEffect(() => {
     load();
   }, []);

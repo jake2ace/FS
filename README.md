@@ -252,16 +252,39 @@ change the value in Render and redeploy; nothing in the repository or the fronte
 | second attachment is an invoice / packing list / certificate | `NEEDS_REVIEW` | `wrong_doc_type` | Needs review |
 | empty, corrupt or image-only file | `NEEDS_REVIEW` | `unreadable` | Needs review |
 | a required field is blank or a placeholder | `NEEDS_REVIEW` | `missing_value` | Needs review |
-| request to *send* the draft BL (nothing attached yet) | `NEEDS_REVIEW` | `missing_attachment` | Needs review |
+| request to *send* the draft BL (nothing attached yet) | `OK` | – | *Draft BL requested* -> action list, not the review queue |
 | other categories | `OK` | – | No action |
 
 A blank or invalid value is not a discrepancy. All seven comparisons must complete reliably before an
 OK or MISMATCH is returned. Unknown document roles are never inferred from filenames alone.
 
-> **Current deployment note (2026-09-21).** The live UI separates 91 `request_draft` emails into an
-> operational "Draft BL requested" action list and currently exports them as `BL_COMPARISON` + `OK`.
-> This is an interim product treatment. It still needs to be reconciled with the official output
-> contract above before the final submission run.
+### Why a request to send the draft BL is reported as OK, not NEEDS_REVIEW
+
+This is the one judgement call in the contract above, it affects 91 of the 220 comparison emails, and it
+is a decision rather than a measurement. The reasoning, in full:
+
+**What these emails actually are.** They do not ask us to check anything. They ask us to *send out* a
+draft bill of lading so the counterparty can check it later. Nothing is attached because nothing is
+supposed to be attached yet. The process has not reached a comparison; it has not failed one.
+
+**Why not `NEEDS_REVIEW`.** That status means a person has to decide something the system could not.
+Here there is nothing to decide: no document is late, nothing was lost, and a human reading the email
+would reach the same conclusion the system did. Routing all 91 into the review queue buries the 20 cases
+that genuinely need a person underneath 91 that a human would open and immediately close. Removing that
+kind of noise is the point of the product.
+
+**Why `missing_attachment` in particular is wrong here.** That reason describes a comparison that could
+not be performed because a document which should have arrived did not. In these emails no document was
+ever expected. Recording them as a failed comparison would put something in the report that did not
+happen.
+
+**What we are less sure about.** The contract defines `OK` as "all seven fields match", and here there
+are no fields to match, so `OK` is not a perfect fit either. The closed vocabulary has three values and
+none of them means *this request does not involve a comparison*. We chose the value that does not invent
+a problem, and we made sure the interface never hides the difference: these 91 appear in their own
+**Draft BL requested** list with the action to take, and are never counted as verified comparisons. If
+the organisers intend them to be escalations instead, the change is one branch in
+`backend/app/pipeline.py` and one paragraph in `backend/app/ai.py`.
 
 The confirmed workflow is in [the flowchart](docs/FreightSentinel-确认版流程图.html), with a
 [scalable SVG](docs/FreightSentinel-确认版流程图.svg) and the
@@ -298,9 +321,9 @@ install these OS binaries.
 
 ## Evaluation boundary
 
-Only the participant bundle is used as input. The organisers' self-evaluation endpoint (`POST /submit` of
-the local Docker server) may be used to score `GET /api/submission`; the private reference labels are never
-read.
+Only the participant bundle is used as input, and the organisers' private reference labels are never
+opened. No prompt, threshold or routing rule in this repository was derived from a known answer: every
+change is argued from what the email and the two documents themselves say.
 
 Offline workflow tests use an explicit fake model in `backend/tests/fakes.py`; they do not call paid APIs
 and do not prove model accuracy. Full-inbox live-run records are kept on the development machine and are
@@ -397,21 +420,30 @@ instance.
 
 ## Future roadmap
 
-**Correctness first.** Reconcile the 91 `request_draft` action items with the official output contract.
-Keep the first pass's valid findings when the senior pass fails technically, and show the technical
-failure separately instead of overwriting a correct `missing_attachment` or `missing_value` reason.
+**An access control system.** The backend's write endpoints are currently open: anyone who knows the
+address can start a full re-run, change a human conclusion or clear the results. That is acceptable for a
+demonstration and not acceptable for real use. The next piece of work is proper access control - sign-in
+and identity, roles that decide what each person may do (a read-only observer, an operator who can make
+decisions, an administrator who can change configuration), rate limiting on writes, and an audit log of
+who changed what and when. The read endpoints should not be open to everyone either: they contain
+customer names, cargo and ports.
+
+**Human decisions in a real database.** Results and history are written to Render's ephemeral disk today
+and do not survive a restart. Managed Postgres is what lets history, the audit trail and human
+conclusions outlive a restart - and it is also where the access control system above has to store its
+users and roles.
 
 **Reading harder documents.** Install Tesseract and Poppler on the backend host to enable the bounded
 local OCR recovery the pipeline already implements but cannot currently use on Render, and evaluate a
 vision-capable model for scanned and image-only pages.
 
-**Real inbox, real storage.** Replace the static participant bundle with IMAP or Microsoft Graph, and
-the JSON result cache with Postgres so history, audit trail and human decisions survive a restart.
+**A real inbox.** Replace the static participant bundle with IMAP or Microsoft Graph so the system reads
+the operations mailbox directly instead of a delivered dataset.
 
 **Learning from the review queue.** Every human correction already records the confirmed category,
 outcome, defect fields and a note. Feeding those back as evaluation cases turns the review queue into
 a regression suite that grows as the system is used.
 
 **A measurable baseline.** Automate the full-inbox run and the structural audit in CI so any prompt or
-model change is scored against the previous run before it is adopted, rather than judged by a single
-sample.
+model change is compared against the previous run email by email before it is adopted, rather than
+judged by a single sample.

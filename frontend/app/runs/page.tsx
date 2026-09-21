@@ -127,7 +127,7 @@ export default function BatchRun() {
             <h2>Submission JSON</h2>
             {subStatus ? (
               <>
-                <p className="small">{subStatus.analysed} of {subStatus.total} emails analysed{subStatus.ready ? ' - ready for self-evaluation.' : ` - ${subStatus.missing_count} still need analysis before export.`}</p>
+                <p className="small">{subStatus.analysed} of {subStatus.total} emails analysed{subStatus.ready ? ' - ready to export.' : ` - ${subStatus.missing_count} still need analysis before export.`}</p>
                 {subStatus.ready ? <a className="btn btn-primary" href="/api/submission?download=true">Download submission.json</a> : <button className="btn" disabled>Analyse all emails to enable export</button>}
                 <p className="small muted" style={{ marginTop: 8 }}>Shape follows sample_submission.json exactly (category, status, review_reason, defect_fields, has_defect for every email_id).</p>
               </>

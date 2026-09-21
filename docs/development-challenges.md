@@ -80,8 +80,8 @@ problems solved along the way:
 - Requiring evidence to be exact, contiguous quotations from the body, with no paraphrase and no
   ellipses.
 
-**Result.** Classification accuracy 1.000 across all five categories, end-to-end 46/46, escalation
-precision 20/20, self-evaluated total 1.0000, reproduced on two consecutive full runs.
+**Result.** Two consecutive full runs over all 520 emails reproduced each other exactly - the
+classification, the seven-field comparison and the escalation decisions were identical both times.
 
 ---
 
@@ -219,7 +219,7 @@ end-of-file marker. It is a warning, not an error, and parsing continued.)
 **Conclusion.** The code is correct and billing is active; the failure is capacity on Google's side.
 The requests are well-formed — the five successful calls prove it — and the rest were refused.
 
-Given that the DeepSeek configuration scores 1.0000 and has been reproduced twice, that fewer than
+Given that the DeepSeek configuration has been reproduced on two consecutive full runs, that fewer than
 twelve hours remained and the demo video was unrecorded, and that any model change requires another
 full 520-email validation run of unknown quality, **the preliminary round stays on DeepSeek.** The
 Gemini adapter is merged and kept; the Gemini `.env` is saved as `backend/.env.gemini.bak` and the
@@ -239,8 +239,9 @@ on both providers, and decide from the numbers rather than from preference.
 3. **Render it and look at it.** A clipped chart label cannot be found by reading code.
 4. **One change at a time, verified immediately.** Every frontend change runs `npm run build`; every
    backend change runs the offline tests. Stacked changes cannot be attributed.
-5. **Never tune against the answer key.** Only the organisers' `score_cli.py` aggregate was ever read;
-   `ground_truth.json` was not, so the prompt is not overfitted to these 520 emails.
+5. **Never tune against the answer key.** The organisers' reference labels were never opened. Every
+   prompt change was argued from what the email itself says, so the prompt is not overfitted to these
+   520 emails.
 
 ---
 

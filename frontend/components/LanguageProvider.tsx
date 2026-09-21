@@ -333,7 +333,7 @@ function translateText(value: string): string {
   if (match) return `${leading}复核历史（${match[1]}）${trailing}`;
   match = text.match(/^- (\d+) still need analysis before export\.$/);
   if (match) return `${leading}— 还有 ${match[1]} 封邮件需要分析后才能导出。${trailing}`;
-  if (text === '- ready for self-evaluation.') return `${leading}— 已可以进行自评。${trailing}`;
+  if (text === '- ready to export.') return `${leading}— 已可以导出。${trailing}`;
   return value;
 }
 

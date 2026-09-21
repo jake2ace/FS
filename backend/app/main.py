@@ -16,7 +16,7 @@ POST /api/runs/{run_id}/cancel
 POST /api/runs/{run_id}/retry/{email_id}  re-run one failed email of a run
 POST /api/cases/{email_id}/decision       confirm | escalate | resolve | reopen
 POST /api/cases/{email_id}/correction-draft
-GET  /api/submission                      official self-evaluation JSON
+GET  /api/submission                      official submission JSON
 GET/POST /api/settings/policy             standard | strict
 """
 from __future__ import annotations

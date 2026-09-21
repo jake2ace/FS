@@ -45,6 +45,54 @@ compute its own business verdict or override AI readings. Invalid AI output goes
 configuration or API failure is a visible technical failure with retry, never a rules-only success.
 `AI_MODE=full` is the normal configuration; `off` disables analysis.
 
+## Cloud architecture
+
+Three cloud services, each doing work the product cannot do without.
+
+| Component | Service | What it actually does here |
+|---|---|---|
+| Decision layer | DeepSeek API | Every business verdict. Two distinct model configurations form a tiered decision path: a primary pass at `reasoning_effort=high`, and a second pass at `max` for cases the first one would not decide. |
+| Backend | Render (free web service) | The pipeline, the inbox API, batch runs, human decisions and the official export. Deployed from `render.yaml` as a Blueprint. |
+| Frontend | Vercel | The workspace, statically prerendered and served from the edge, proxying `/api/*` to the backend so the browser never holds a key. |
+
+**The cloud is core functionality, not hosting.** The product has no rule engine and no offline mode:
+if the provider is unreachable the case becomes a visible technical failure and goes to a person. There
+is no local path that produces a verdict. The tiered escalation is likewise a cloud design - two model
+configurations at different reasoning depths, with the second one called only when the first declines to
+decide, so cost is spent on the 6 % of cases that need it (44 senior calls against 740 primary ones) rather than on all 520.
+
+**Infrastructure as code.** `render.yaml` pins 19 environment variables - provider, both model tiers,
+thinking effort, timeouts, rate limits, fallback behaviour and batch concurrency. Deploying asks for
+exactly one value, `AI_API_KEY`, marked `sync: false` so it never enters the repository. The consequence
+is that the deployed service is reproducible from this repository and provably runs the configuration
+that was tested, rather than whatever was last clicked into a dashboard.
+
+**Written for cloud provider limits, not around them.** A sliding-window pacer caps requests per minute
+per model; batch concurrency is bounded; HTTP 429 and 503 rest the primary model for a cooldown window
+and route to a fallback model; retries are capped so an unusable answer is never requested repeatedly;
+and truncated model output is detected and escalated instead of being parsed as a verdict.
+
+**Operational loop.** Render health-checks `/health`, which answers both `GET` and `HEAD` because uptime
+monitors default to `HEAD`. An external monitor polls it every five minutes, which also keeps the free
+instance from sleeping. `/health` reports service, data and AI status separately, so a green page and a
+broken provider are distinguishable.
+
+### What the free tier costs, and how this scales
+
+The free tier is a deliberate constraint for a preliminary-round prototype, and it has three visible
+effects. They are listed here with the specific change each one needs.
+
+| Limit | Effect today | Next step |
+|---|---|---|
+| Ephemeral disk | Analysis results do not survive a restart or a redeploy | The whole store is a single atomically written `results.json`. Snapshotting it to object storage on flush and restoring it at boot needs one credential and no schema change; a managed Postgres becomes worthwhile only once there are multiple teams to isolate. |
+| 512 MB memory | `BATCH_CONCURRENCY` is pinned to 4 while several PDFs are parsed at once | The same pipeline over the same 520 emails finished in 10 min 6 s at concurrency 8 on a larger machine. Throughput is a paid instance plus a higher provider rate limit, not an application change. |
+| 15-minute sleep | Cold starts look like a broken prototype | Mitigated by the uptime monitor today; a paid instance removes it. |
+
+A full-inbox run is currently an in-process asyncio batch. Moving it behind a queue with separate workers
+would let a restart resume a run instead of failing it, and would let throughput scale by adding workers
+rather than by raising concurrency inside one instance. That is the natural next piece of cloud
+architecture, and it is deliberately not in the preliminary-round build.
+
 ## Repository layout
 
 ```
@@ -288,6 +336,15 @@ Current review reasons are `unreadable` 9, `wrong_doc_type` 5, `missing_attachme
 technical failures: `email_507` should retain `missing_attachment`; `email_516`, `email_518`, and
 `email_520` should retain `missing_value`. They are recorded here rather than presented as verified
 business accuracy.
+The cause has since been fixed: a senior call that fails for technical reasons no longer replaces the
+verdict the primary model already produced. The snapshot above predates that fix.
+
+**Throughput and concurrency.** The run is bounded by model latency, not by application code. 784 model
+calls in 16 min 55 s is about 0.8 calls per second, and the backend spends nearly all of that waiting on
+the provider. `BATCH_CONCURRENCY` is the single dial: the same pipeline over the same 520 emails finished
+in 10 min 6 s at concurrency 8 on a development machine. It is pinned to 4 on Render's free instance to
+stay inside a 512 MB memory budget while several PDFs are parsed at the same time. A paid instance, or a
+provider tier with a higher rate limit, raises throughput without touching any application code.
 
 `GET /api/submission` was checked field by field against the organisers' `sample_submission.json`:
 520 keys, no gaps or extras, the same five fields on every record, same types.

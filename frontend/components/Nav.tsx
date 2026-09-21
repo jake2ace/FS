@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api, post } from '@/lib/api';
 import { useLanguage } from '@/components/LanguageProvider';
+import { useRunPulse, useLiveRefresh } from '@/lib/useLiveRefresh';
 
 const LINKS = [
   { href: '/', label: 'Today' },
@@ -18,6 +19,7 @@ export default function Nav() {
   const { locale, setLocale } = useLanguage();
   const [languageOpen, setLanguageOpen] = useState(false);
   const [health, setHealth] = useState<any>(null);
+  const pulse = useRunPulse();
   const [error, setError] = useState<string | null>(null);
 
   const load = () =>
@@ -30,12 +32,12 @@ export default function Nav() {
 
   useEffect(() => {
     load();
-    // /api/health is a dictionary of counters, not a query - cheap enough to watch
-    // closely. It is the only live signal on pages that are not the run page, and a
-    // counter that sits still for half a minute reads as a broken app.
-    const t = setInterval(load, 2500);
+    // These counters only change because a run changed them, so the run itself is the
+    // trigger. The slow timer is a backstop for a policy change made in another tab.
+    const t = setInterval(load, 20000);
     return () => clearInterval(t);
   }, []);
+  useLiveRefresh(load);
 
   const togglePolicy = async () => {
     if (!health) return;
@@ -89,7 +91,13 @@ export default function Nav() {
               <button className="chip chip-dark" onClick={togglePolicy} title="Click to switch the automation policy" style={{ cursor: 'pointer' }}>
                 Policy: {health.policy === 'strict' ? 'Strict' : 'Standard'}
               </button>
-              <span className="chip chip-dark">{health.results_cached}/{health.emails} analysed</span>
+              {/* During a re-run the cached count stays at its total the whole time, so the
+                  chip has to show the run's progress or it reads as a frozen app. */}
+              <span className="chip chip-dark">
+                {pulse.active && pulse.total
+                  ? `${pulse.done}/${pulse.total} analysing…`
+                  : `${health.results_cached}/${health.emails} analysed`}
+              </span>
             </>
           ) : (
             <span className="chip chip-dark">connecting…</span>

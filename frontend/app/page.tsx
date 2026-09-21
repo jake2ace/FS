@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { api, post, fmtTime, REVIEW_LABEL } from '@/lib/api';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 
 export default function TodayWorkCentre() {
   const router = useRouter();
@@ -28,14 +29,10 @@ export default function TodayWorkCentre() {
         setError(null);   // a recovered request clears the previous failure
       })
       .catch((e) => setError(e.message));
-  // While a run is going the whole page is a live readout, so it refreshes at the
-  // pace of the run; the rest of the time an eight-second tick is plenty.
-  const runActive = data?.last_run?.status === 'running';
   useEffect(() => {
     load();
-    const t = setInterval(load, runActive ? 1500 : 8000);
-    return () => clearInterval(t);
-  }, [runActive]);
+  }, []);
+  useLiveRefresh(load);
 
   const startRun = async () => {
     setStarting(true);

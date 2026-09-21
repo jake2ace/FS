@@ -167,6 +167,8 @@ export async function api<T = any>(path: string, init?: RequestInit): Promise<T>
 export const post = <T = any>(path: string, body?: any) =>
   api<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 
+export const del = <T = any>(path: string) => api<T>(path, { method: 'DELETE' });
+
 export const CATEGORY_LABEL: Record<string, string> = {
   BL_COMPARISON: 'BL comparison',
   SI_REQUEST: 'SI request',

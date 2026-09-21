@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { OutcomeBar } from '@/components/OutcomeBar';
 import { RunDonut } from '@/components/RunDonut';
-import { api, post, fmtTime, type RunState } from '@/lib/api';
+import { api, post, del, fmtTime, type RunState } from '@/lib/api';
 
 export default function BatchRun() {
   const [runs, setRuns] = useState<RunState[]>([]);
@@ -36,6 +36,25 @@ export default function BatchRun() {
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!active]);
+
+  // Clearing is destructive and permanent, so the button asks once rather than firing on
+  // the first click. Without it there is no way to reset the demo: results are keyed by
+  // email id and a re-run overwrites them, so the dashboard keeps whatever was there.
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const clearAll = async () => {
+    if (!confirmClear) { setConfirmClear(true); return; }
+    setClearing(true);
+    try {
+      await del('/api/results');
+      setConfirmClear(false);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setClearing(false);
+    }
+  };
 
   const start = async () => {
     setBusy(true);
@@ -76,6 +95,14 @@ export default function BatchRun() {
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <label className="small"><input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} /> re-analyse already analysed emails</label>
           <button className="btn btn-primary" onClick={start} disabled={busy || !!active}>{active ? 'Running…' : 'Run full inbox'}</button>
+          <button className={confirmClear ? 'btn btn-sm btn-danger' : 'btn btn-sm'}
+                  onClick={clearAll} disabled={clearing || !!active}
+                  title="Removes every stored analysis result, on disk as well as in memory">
+            {clearing ? 'Clearing…' : confirmClear ? 'Confirm — delete all results' : 'Clear results'}
+          </button>
+          {confirmClear && !clearing ? (
+            <button className="btn btn-sm" onClick={() => setConfirmClear(false)}>Cancel</button>
+          ) : null}
         </div>
       </div>
       {error ? <div className="alert alert-risk" style={{ marginBottom: 12 }}>{error}</div> : null}

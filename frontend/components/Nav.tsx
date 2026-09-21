@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api, post } from '@/lib/api';
+import { useLanguage } from '@/components/LanguageProvider';
 
 const LINKS = [
   { href: '/', label: 'Today' },
@@ -14,6 +15,8 @@ const LINKS = [
 
 export default function Nav() {
   const pathname = usePathname() || '/';
+  const { locale, setLocale } = useLanguage();
+  const [languageOpen, setLanguageOpen] = useState(false);
   const [health, setHealth] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,6 +91,41 @@ export default function Nav() {
           ) : (
             <span className="chip chip-dark">connecting…</span>
           )}
+          <div className="language-menu" data-no-translate>
+            <button
+              type="button"
+              className="language-trigger"
+              aria-haspopup="menu"
+              aria-expanded={languageOpen}
+              onClick={() => setLanguageOpen((open) => !open)}
+            >
+              <span aria-hidden="true">🌐</span>
+              {locale === 'zh' ? '中文' : 'English'}
+              <span className="language-chevron" aria-hidden="true">▾</span>
+            </button>
+            {languageOpen ? (
+              <div className="language-options" role="menu" aria-label="Language / 语言">
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={locale === 'en'}
+                  className={locale === 'en' ? 'selected' : ''}
+                  onClick={() => { setLocale('en'); setLanguageOpen(false); }}
+                >
+                  <span>English</span><span aria-hidden="true">{locale === 'en' ? '✓' : ''}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={locale === 'zh'}
+                  className={locale === 'zh' ? 'selected' : ''}
+                  onClick={() => { setLocale('zh'); setLanguageOpen(false); }}
+                >
+                  <span>中文</span><span aria-hidden="true">{locale === 'zh' ? '✓' : ''}</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </header>

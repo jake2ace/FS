@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { OutcomeBar } from '@/components/OutcomeBar';
 import { RunDonut } from '@/components/RunDonut';
 import { api, post, del, fmtTime, type RunState } from '@/lib/api';
+import { useRunPulse, useLiveRefresh } from '@/lib/useLiveRefresh';
 
 export default function BatchRun() {
   const [runs, setRuns] = useState<RunState[]>([]);
@@ -24,18 +25,20 @@ export default function BatchRun() {
       })
       .catch((e) => setError(e.message));
 
+  // This page used to poll /api/runs on its own timer while the shared poller polled the
+  // same endpoint - two requests a second for identical data. It reads that poll instead,
+  // and keeps its own load() for the submission status, which the poller does not carry.
+  const pulse = useRunPulse();
   useEffect(() => {
     load();
   }, []);
-  const active = runs.find((r) => r.status === 'running');
   useEffect(() => {
-    if (!active) return;
-    // Fast while something is moving, relaxed once it is not: this page is often the
-    // one left open on a second screen during judging.
-    const t = setInterval(load, active ? 1500 : 6000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!active]);
+    if (pulse.items.length) setRuns(pulse.items);
+  }, [pulse]);
+  // load() also refetches the runs the pulse already has, but at most once every
+  // six seconds - cheap next to keeping the submission status and summary in step.
+  useLiveRefresh(load);
+  const active = runs.find((r) => r.status === 'running');
 
   // Clearing is destructive and permanent, so the button asks once rather than firing on
   // the first click. Without it there is no way to reset the demo: results are keyed by

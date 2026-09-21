@@ -91,6 +91,35 @@ compute its own business verdict or override AI readings. Invalid AI output goes
 configuration or API failure is a visible technical failure with retry, never a rules-only success.
 `AI_MODE=full` is the normal configuration; `off` disables analysis.
 
+### Why the AI decides, and not a rule engine
+
+We started from the opposite plan: rules first, AI only as a fallback. We changed our minds after
+looking at what the rules would actually be learning.
+
+The supplied emails and documents come from a template generator. A rule set written against them can
+be made to score very well - but what it would be recognising is *the generator*, not a Bill of Lading.
+Every layout it handles is a layout someone chose in advance. The first real document with a label
+spelled differently, a field in another order, or an address continued across a page break falls
+outside every rule that was written, and a rule engine's failure mode is not a question - it is a
+confident wrong answer. High accuracy on this dataset would have told us almost nothing about accuracy
+on the next one, which is the only accuracy a shipping team can use.
+
+Training our own model was the other option, and the dataset is the reason it was not worth it. Model
+training earns its cost when the data is large and varied enough to teach something a general model
+does not already know. These 520 emails are neither, so training would have produced a second, weaker
+way of overfitting the same generator.
+
+That leaves reading the documents with a model that already understands how shipping paperwork is
+written. So the AI makes every business judgement, and the program's job is the part a program is
+actually good at: reading files, validating that the model's answer is well formed, checking that each
+quoted excerpt exists in the source, and refusing the answer when it is not. There is no rule that
+quietly supplies a verdict when the AI fails, because a rule-derived `OK` and a verified `OK` look
+identical on the report - and the whole value of the report is that they do not.
+
+What this costs us is honest: a model call per email, seconds rather than milliseconds, and a bill.
+A deterministic pipeline over this dataset would be faster and cheaper. It would also be measuring
+the wrong thing.
+
 ## Cloud architecture
 
 Three cloud services, each doing work the product cannot do without.
@@ -124,16 +153,17 @@ monitors default to `HEAD`. An external monitor polls it every five minutes, whi
 instance from sleeping. `/health` reports service, data and AI status separately, so a green page and a
 broken provider are distinguishable.
 
-### What the free tier costs, and how this scales
+### What this tier costs, and how it scales
 
-The free tier is a deliberate constraint for a preliminary-round prototype, and it has three visible
-effects. They are listed here with the specific change each one needs.
+The service started on Render's free tier and now runs on Standard (1 CPU / 2 GB) with a 1 GB disk.
+Both the reason for moving and the limits that remain are listed here.
 
 | Limit | Effect today | Next step |
 |---|---|---|
 | Single instance | A service with a disk cannot run more than one instance, and deploys are no longer zero-downtime | Accepted deliberately: the store is in-process, so a second instance would hold a second, divergent copy of the same state. Managed Postgres is what removes this, and it is on the roadmap rather than in this build. |
-| 512 MB memory | `BATCH_CONCURRENCY` is pinned to 4 while several PDFs are parsed at once | The same pipeline over the same 520 emails finished in 10 min 6 s at concurrency 8 on a larger machine. Throughput is a paid instance plus a higher provider rate limit, not an application change. |
-| 15-minute sleep | Cold starts look like a broken prototype | Mitigated by the uptime monitor today; a paid instance removes it. |
+| 512 MB on the free tier | `BATCH_CONCURRENCY` had to stay at 4 while several PDFs parsed at once, and a full run took 16 min 24 s | Resolved by moving to Standard: the same run at concurrency 32 takes 3 min 39 s, with no application change. |
+| Model latency, now the floor | Raising concurrency from 32 to 64 saved 4%. CPU sits at a 5% baseline and memory never passes 20%, so the instance is not the constraint | A run cannot finish faster than its slowest single email - one primary call plus one senior review, which is sequential by design. Only a model that needs less deliberation shortens it. |
+| Sleep on the free tier | Cold starts looked like a broken prototype | Removed by the paid instance; the uptime monitor still runs. |
 
 A full-inbox run is currently an in-process asyncio batch. Moving it behind a queue with separate workers
 would let a restart resume a run instead of failing it, and would let throughput scale by adding workers
@@ -287,6 +317,7 @@ change the value in Render and redeploy; nothing in the repository or the fronte
 | `POST /api/cases/{id}/readings` · `POST /api/cases/{id}/attachments` | corrected readings / replacement attachments |
 | `POST /api/cases/{id}/correction-draft` | editable correction email text - never sent by the system |
 | `GET /api/submission` · `GET /api/submission/status` | output in the official `sample_submission.json` shape (all 520 email ids) |
+| `GET /api/export.csv` | the operations report: one row per differing field, with the SI and BL readings side by side |
 | `GET /api/dashboard` · `GET/POST /api/settings/policy` · `GET /api/categories` | Today Work Centre data · automation policy · category enum |
 
 ## Outcome contract

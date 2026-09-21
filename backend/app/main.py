@@ -17,6 +17,7 @@ POST /api/runs/{run_id}/retry/{email_id}  re-run one failed email of a run
 POST /api/cases/{email_id}/decision       confirm | escalate | resolve | reopen
 POST /api/cases/{email_id}/correction-draft
 GET  /api/submission                      official submission JSON
+GET  /api/export.csv                      operations report (one row per differing field)
 GET/POST /api/settings/policy             standard | strict
 """
 from __future__ import annotations
@@ -24,11 +25,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import csv
+import io
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 
@@ -580,6 +583,45 @@ async def submission(download: bool = Query(default=False)):
     if missing:
         raise HTTPException(status_code=409, detail=f"Analyse or manually classify the remaining {len(missing)} emails before exporting the submission")
     return JSONResponse(content=sub, headers=headers)
+
+
+@app.get("/api/export.csv")
+async def export_csv(download: bool = Query(default=True)):
+    """The operations report.
+
+    The submission JSON answers the grader's question - one record per email, in the
+    shape the organisers specified. It does not answer the operator's question, which is
+    "what do I have to fix, and where does the document say so". That needs one row per
+    differing field, not per email, so a person can work the list from the top and see
+    both readings side by side without opening the app.
+
+    A case with three differing fields is three rows. A case with nothing to fix is one
+    row with the field columns empty, so the file still accounts for every email.
+    """
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Email ID", "SI file", "BL file", "Mismatch field",
+                "SI value", "BL value", "Explanation", "Final status"])
+    for r in store.all():
+        si = next((d.filename for d in r.docs if d.detected_type == "SI"), "")
+        bl = next((d.filename for d in r.docs if d.detected_type == "BL"), "")
+        status = r.status if not r.review_reason else f"{r.status} ({r.review_reason})"
+        differing = [f for f in r.fields if f.match is False]
+        if differing:
+            for f in differing:
+                w.writerow([r.email_id, si, bl, f.label, f.si_value or "", f.bl_value or "",
+                            f.reason or r.headline, status])
+        else:
+            w.writerow([r.email_id, si, bl, "", "", "",
+                        r.headline or r.explanation, status])
+    # Excel reads a UTF-8 CSV as the local code page unless the file starts with a BOM,
+    # which turns every non-ASCII port and party name into mojibake for the person this
+    # file is actually for.
+    body = "\ufeff" + buf.getvalue()
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = 'attachment; filename="freightsentinel-report.csv"'
+    return Response(content=body, media_type="text/csv; charset=utf-8", headers=headers)
 
 
 @app.get("/api/submission/status")

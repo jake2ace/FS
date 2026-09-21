@@ -166,12 +166,25 @@ export default function BatchRun() {
         </div>
         <div>
           <div className="card">
-            <h2>Submission JSON</h2>
+            <h2>Export</h2>
             {subStatus ? (
               <>
                 <p className="small">{subStatus.analysed} of {subStatus.total} emails analysed{subStatus.ready ? ' - ready to export.' : ` - ${subStatus.missing_count} still need analysis before export.`}</p>
-                {subStatus.ready ? <a className="btn btn-primary" href="/api/submission?download=true">Download submission.json</a> : <button className="btn" disabled>Analyse all emails to enable export</button>}
-                <p className="small muted" style={{ marginTop: 8 }}>Shape follows sample_submission.json exactly (category, status, review_reason, defect_fields, has_defect for every email_id).</p>
+                <div className="toolbar" style={{ marginBottom: 6 }}>
+                  {subStatus.ready ? <a className="btn btn-primary" href="/api/submission?download=true">submission.json</a> : <button className="btn" disabled>Analyse all emails to enable export</button>}
+                  <a className="btn" href="/api/export.csv">report.csv</a>
+                </div>
+                {/* Two exports because they answer two different questions, and saying whose
+                    question each one answers is the point - an export nobody can name a reader
+                    for is a button, not a feature. */}
+                <p className="small muted" style={{ marginTop: 8 }}>
+                  <b>submission.json</b> follows sample_submission.json exactly - one record per
+                  email_id, for machine checking.
+                </p>
+                <p className="small muted" style={{ marginTop: 4 }}>
+                  <b>report.csv</b> is for the operations team: one row per differing field, with
+                  both readings side by side, so the list can be worked outside this screen.
+                </p>
               </>
             ) : (
               <p className="muted small">…</p>

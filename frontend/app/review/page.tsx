@@ -29,9 +29,14 @@ export default function ReviewQueue() {
   const list = useMemo(() => {
     const bl = rows;
     let sel: EmailRow[];
+    // The three tabs are one list split three ways, so a case belongs to exactly one of
+    // them. Auto-completed used to mean "was closed without a person", which left a case
+    // a person then confirmed sitting in both Auto-completed and Resolved - the same case
+    // counted twice, in two places that contradict each other. Once a person has signed
+    // off, Resolved is where it is.
     if (tab === 'open') sel = bl.filter((r) => r.automation === 'review_required' && !r.resolved);
     else if (tab === 'resolved') sel = bl.filter((r) => r.resolved);
-    else sel = bl.filter((r) => r.automation === 'auto_completed');
+    else sel = bl.filter((r) => r.automation === 'auto_completed' && !r.resolved);
     // A case someone escalated sorts above everything else in the open list. Escalating
     // used to only write a line into the record, which made the word a promise the
     // product did not keep: nothing moved, nothing was routed, and a supervisor opening
@@ -60,7 +65,7 @@ export default function ReviewQueue() {
   const counts = {
     open: rows.filter((r) => r.automation === 'review_required' && !r.resolved).length,
     resolved: rows.filter((r) => r.resolved).length,
-    auto: rows.filter((r) => r.category === 'BL_COMPARISON' && r.automation === 'auto_completed').length,
+    auto: rows.filter((r) => r.category === 'BL_COMPARISON' && r.automation === 'auto_completed' && !r.resolved).length,
   };
 
   return (

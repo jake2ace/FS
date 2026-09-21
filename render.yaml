@@ -1,5 +1,10 @@
 # Render Blueprint - deploys the FastAPI backend as a free web service.
-# Dashboard: New + -> Blueprint -> pick this repo. Set AI_PROVIDER / AI_API_KEY when prompted.
+# Dashboard: New + -> Blueprint -> pick this repo. Only AI_API_KEY is asked for;
+# every other value below is pinned here so the cloud run matches the tested
+# local configuration (DeepSeek two-stage: primary high -> senior max).
+#
+# render.yaml 只会向你索取 AI_API_KEY 一条，其余全部在这里写死，
+# 保证云端跑的就是本地测过的那套配置。
 services:
   - type: web
     name: freightsentinel-api
@@ -13,23 +18,51 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
-      - key: AI_PROVIDER
-        sync: false
+
+      # --- secret: the only value Render asks for at deploy time ---
+      # 唯一需要在 Render 面板手填的值，绝不写进仓库
       - key: AI_API_KEY
         sync: false
+
+      # --- primary stage / 主模型 ---
+      - key: AI_PROVIDER
+        value: deepseek
       - key: AI_MODEL
-        sync: false
-      - key: AI_FALLBACK_MODEL
-        sync: false
-      - key: AI_MAX_RPM
-        sync: false
-      - key: AI_SENIOR_MODEL
-        sync: false
-      - key: AI_SENIOR_MAX_RPM
-        sync: false
+        value: deepseek-flash
       - key: AI_MODE
         value: full
+      - key: AI_THINKING
+        value: "true"
+      - key: AI_REASONING_EFFORT
+        value: high
+      - key: AI_TIMEOUT
+        value: "240"
+      - key: AI_FALLBACK_MODEL
+        value: none
+      - key: AI_MAX_RPM
+        value: "0"
+
+      # --- senior stage / 资深复核阶段 ---
+      # AI_SENIOR_PROVIDER must match AI_PROVIDER, otherwise the primary key is
+      # not reused and the senior stage silently disables itself.
+      # 必须与 AI_PROVIDER 一致，否则不会复用主 key，复核阶段会静默关闭。
+      - key: AI_SENIOR_PROVIDER
+        value: deepseek
+      - key: AI_SENIOR_MODEL
+        value: deepseek-flash
+      - key: AI_SENIOR_THINKING
+        value: "true"
+      - key: AI_SENIOR_REASONING_EFFORT
+        value: max
+      - key: AI_SENIOR_TIMEOUT
+        value: "240"
+      - key: AI_SENIOR_MAX_RPM
+        value: "0"
+
+      # --- runtime / 运行参数 ---
       - key: BATCH_CONCURRENCY
         value: "4"
       - key: CORS_ORIGINS
         value: "*"
+      - key: AUTOMATION_POLICY
+        value: standard

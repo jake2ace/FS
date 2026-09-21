@@ -153,9 +153,9 @@ cd backend && AI_PROVIDER=none AI_MODE=off .venv/bin/pytest -q tests
 ### 1. Backend on Render
 
 1. Render → **New +** → **Blueprint** → select this repository (it reads `render.yaml`).
-2. When prompted, fill the variables marked `sync: false`: at minimum `AI_PROVIDER=deepseek`,
-   `AI_API_KEY=<the key>`, `AI_MODEL=deepseek-flash`. Add `AI_THINKING`, `AI_REASONING_EFFORT`,
-   `AI_TIMEOUT`, `AI_SENIOR_*` from the competition block above.
+2. Render asks for **one** value: `AI_API_KEY`. Paste the provider key. Every other variable -
+   provider, both models, thinking effort, timeouts, rate limits, concurrency - is pinned in
+   `render.yaml`, so the cloud run matches the tested local configuration.
 3. Deploy, then check `https://<service>.onrender.com/health` - it reports service, data and AI status.
 
 The free plan sleeps after 15 minutes without traffic; keep it warm during judging with an uptime monitor

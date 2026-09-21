@@ -103,18 +103,20 @@ export default function BatchRun() {
               {latest.failed.length ? (
                 <div style={{ marginTop: 12 }}>
                   <h3>Failed items</h3>
-                  <table>
-                    <thead><tr><th>Email</th><th>Error</th><th></th></tr></thead>
-                    <tbody>
-                      {latest.failed.map((f) => (
-                        <tr key={f.email_id}>
-                          <td className="mono">{f.email_id}</td>
-                          <td className="small">{f.error}</td>
-                          <td className="right"><button className="btn btn-sm" onClick={() => retry(latest.run_id, f.email_id)}>Retry</button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Email</th><th>Error</th><th></th></tr></thead>
+                      <tbody>
+                        {latest.failed.map((f) => (
+                          <tr key={f.email_id}>
+                            <td className="mono">{f.email_id}</td>
+                            <td className="small">{f.error}</td>
+                            <td className="right"><button className="btn btn-sm" onClick={() => retry(latest.run_id, f.email_id)}>Retry</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ) : null}
             </>
@@ -148,14 +150,16 @@ export default function BatchRun() {
               // Only the three most recent runs are shown. The history grows with every run,
               // and a card that either stretches down the page or scrolls inside itself reads as
               // clutter next to the run it belongs to. The count in the header says how many exist.
-              <table>
-                <thead><tr><th>Run</th><th>Status</th><th className="right">Done</th><th className="right">Mismatch</th><th className="right">Review</th></tr></thead>
-                <tbody>
-                  {runs.slice(1, 4).map((r) => (
-                    <tr key={r.run_id}><td className="mono">{r.run_id}</td><td>{r.status}</td><td className="right">{r.done}/{r.total}</td><td className="right">{r.mismatch}</td><td className="right">{r.needs_review}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Run</th><th>Status</th><th className="right">Done</th><th className="right">Mismatch</th><th className="right">Review</th></tr></thead>
+                  <tbody>
+                    {runs.slice(1, 4).map((r) => (
+                      <tr key={r.run_id}><td className="mono">{r.run_id}</td><td>{r.status}</td><td className="right">{r.done}/{r.total}</td><td className="right">{r.mismatch}</td><td className="right">{r.needs_review}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
           <p className="footer-note">Results live in the backend cache; <Link href="/review">open the review queue</Link> once the run finishes.</p>

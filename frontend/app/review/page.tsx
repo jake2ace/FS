@@ -69,35 +69,37 @@ export default function ReviewQueue() {
         {list.length === 0 ? (
           <div className="empty">{rows.length === 0 ? 'No results yet - analyse emails from the Smart Inbox or run the full inbox.' : 'Nothing here.'}</div>
         ) : (
-          <table>
-            <thead><tr><th>Email</th><th>Finding</th><th>Status</th><th>Fields / reason</th><th className="right">Conf.</th><th></th></tr></thead>
-            <tbody>
-              {list.map((r) => (
-                <tr key={r.email_id}>
-                  <td className="mono nowrap"><Link href={`/cases/${r.email_id}`}>{r.email_id}</Link></td>
-                  <td><div>{r.headline}</div><div className="small muted truncate">{r.subject}</div></td>
-                  <td><StatusBadge ui={r.ui_status} status={r.status} /></td>
-                  <td className="small">
-                    {r.defect_fields && r.defect_fields.length ? r.defect_fields.join(', ') : r.review_reason ? REVIEW_LABEL[r.review_reason] || r.review_reason : '–'}
-                    {r.processing_status === 'PENDING_HUMAN_APPROVAL' ? <div className="badge badge-warn">Pending approval</div> : null}
-                    {r.decision ? <div className="muted">decision: {r.decision.action}</div> : null}
-                  </td>
-                  <td className="right small">{pct(r.confidence)}</td>
-                  <td className="right nowrap">
-                    <Link href={`/cases/${r.email_id}`} className="btn btn-sm">Open</Link>{' '}
-                    {tab === 'open' && r.processing_status !== 'PENDING_HUMAN_APPROVAL' ? (
-                      <>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Email</th><th>Finding</th><th>Status</th><th>Fields / reason</th><th className="right">Conf.</th><th></th></tr></thead>
+              <tbody>
+                {list.map((r) => (
+                  <tr key={r.email_id}>
+                    <td className="mono nowrap"><Link href={`/cases/${r.email_id}`}>{r.email_id}</Link></td>
+                    <td><div>{r.headline}</div><div className="small muted truncate">{r.subject}</div></td>
+                    <td><StatusBadge ui={r.ui_status} status={r.status} /></td>
+                    <td className="small">
+                      {r.defect_fields && r.defect_fields.length ? r.defect_fields.join(', ') : r.review_reason ? REVIEW_LABEL[r.review_reason] || r.review_reason : '–'}
+                      {r.processing_status === 'PENDING_HUMAN_APPROVAL' ? <div className="badge badge-warn">Pending approval</div> : null}
+                      {r.decision ? <div className="muted">decision: {r.decision.action}</div> : null}
+                    </td>
+                    <td className="right small">{pct(r.confidence)}</td>
+                    <td className="right nowrap">
+                      <Link href={`/cases/${r.email_id}`} className="btn btn-sm">Open</Link>{' '}
+                      {tab === 'open' && r.processing_status !== 'PENDING_HUMAN_APPROVAL' ? (
+                        <>
 
-                        <button className="btn btn-sm btn-danger" disabled={busy === r.email_id} onClick={() => quick(r.email_id, 'escalate')}>Escalate</button>
-                      </>
-                    ) : tab === 'resolved' ? (
-                      <button className="btn btn-sm" disabled={busy === r.email_id} onClick={() => quick(r.email_id, 'reopen')}>Reopen</button>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                          <button className="btn btn-sm btn-danger" disabled={busy === r.email_id} onClick={() => quick(r.email_id, 'escalate')}>Escalate</button>
+                        </>
+                      ) : tab === 'resolved' ? (
+                        <button className="btn btn-sm" disabled={busy === r.email_id} onClick={() => quick(r.email_id, 'reopen')}>Reopen</button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </>

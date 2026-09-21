@@ -118,22 +118,24 @@ export default function TodayWorkCentre() {
           {data.priority.length === 0 ? (
             <div className="empty">{s.analysed === 0 ? 'Nothing analysed yet. Start with the Smart Inbox or run the full inbox.' : 'No open risk cases. Everything is either safe or already handled.'}</div>
           ) : (
-            <table>
-              <thead><tr><th>Email</th><th>Finding</th><th>Status</th><th></th></tr></thead>
-              <tbody>
-                {data.priority.map((p: any) => (
-                  <tr key={p.email_id}>
-                    <td className="mono nowrap">{p.email_id}</td>
-                    <td>
-                      <div>{p.headline}</div>
-                      <div className="muted small truncate">{p.subject}</div>
-                    </td>
-                    <td><StatusBadge ui={p.ui_status} status={p.status} />{p.review_reason ? <div className="small muted">{REVIEW_LABEL[p.review_reason] || p.review_reason}</div> : null}</td>
-                    <td className="right"><Link href={`/cases/${p.email_id}`} className="btn btn-sm">Open</Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Email</th><th>Finding</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                  {data.priority.map((p: any) => (
+                    <tr key={p.email_id}>
+                      <td className="mono nowrap">{p.email_id}</td>
+                      <td>
+                        <div>{p.headline}</div>
+                        <div className="muted small truncate">{p.subject}</div>
+                      </td>
+                      <td><StatusBadge ui={p.ui_status} status={p.status} />{p.review_reason ? <div className="small muted">{REVIEW_LABEL[p.review_reason] || p.review_reason}</div> : null}</td>
+                      <td className="right"><Link href={`/cases/${p.email_id}`} className="btn btn-sm">Open</Link></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
         <div>
@@ -198,19 +200,21 @@ export default function TodayWorkCentre() {
             <span className="small muted">{data.actions_total} emails</span>
           </div>
           <p className="small muted">These emails ask our team to send out a draft BL so the customer can check it. No document is attached yet, so there is nothing for the AI to compare and nothing for a reviewer to decide - the work is to send the document, which is why they stay out of the review queue.</p>
-          <table>
-            <thead><tr><th>Email</th><th>Request</th><th>Action</th><th></th></tr></thead>
-            <tbody>
-              {data.actions.map((a: any) => (
-                <tr key={a.email_id}>
-                  <td className="mono nowrap">{a.email_id}</td>
-                  <td className="muted small truncate">{a.subject}</td>
-                  <td className="small">{a.suggested_action}</td>
-                  <td className="right"><Link href={`/cases/${a.email_id}`} className="btn btn-sm">Open</Link></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Email</th><th>Request</th><th>Action</th><th></th></tr></thead>
+              <tbody>
+                {data.actions.map((a: any) => (
+                  <tr key={a.email_id}>
+                    <td className="mono nowrap">{a.email_id}</td>
+                    <td className="muted small truncate">{a.subject}</td>
+                    <td className="small">{a.suggested_action}</td>
+                    <td className="right"><Link href={`/cases/${a.email_id}`} className="btn btn-sm">Open</Link></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {data.actions_total > data.actions.length ? (
             <p className="small muted">Showing the first {data.actions.length} of {data.actions_total}.</p>
           ) : null}

@@ -90,36 +90,38 @@ export default function SmartInbox() {
           <button className="btn btn-sm" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>‹</button>
           <button className="btn btn-sm" onClick={() => setPage((p) => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1}>›</button>
         </div>
-        <table>
-          <thead>
-            <tr><th>Email</th><th>Subject</th><th>From</th><th className="right">Att.</th><th>Category</th><th>Status</th><th className="right">Conf.</th><th></th></tr>
-          </thead>
-          <tbody>
-            {visible.map((r) => (
-              <tr key={r.email_id}>
-                <td className="mono nowrap">{r.analysed ? <Link href={`/cases/${r.email_id}`}>{r.email_id}</Link> : r.email_id}</td>
-                <td>
-                  <div className="truncate" title={r.subject}>{r.subject}</div>
-                  {r.headline ? <div className="small muted truncate">{r.headline}</div> : <div className="small muted truncate">{r.body_preview}</div>}
-                </td>
-                <td className="small">{r.from}</td>
-                <td className="right">{r.attachment_count}</td>
-                <td><CategoryBadge category={r.category} /></td>
-                <td><StatusBadge ui={r.ui_status} status={r.status} /></td>
-                <td className="right small">{pct(r.confidence)}</td>
-                <td className="right nowrap">
-                  {r.analysed ? <Link href={`/cases/${r.email_id}`} className="btn btn-sm">Open</Link> : null}{' '}
-                  <button className="btn btn-sm btn-primary" onClick={() => analyse(r.email_id)} disabled={busy === r.email_id}>
-                    {busy === r.email_id ? 'Analysing…' : r.analysed ? 'Re-analyse' : 'Analyse'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {visible.length === 0 ? (
-              <tr><td colSpan={8} className="empty">No emails match the current filters.</td></tr>
-            ) : null}
-          </tbody>
-        </table>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Email</th><th>Subject</th><th>From</th><th className="right">Att.</th><th>Category</th><th>Status</th><th className="right">Conf.</th><th></th></tr>
+            </thead>
+            <tbody>
+              {visible.map((r) => (
+                <tr key={r.email_id}>
+                  <td className="mono nowrap">{r.analysed ? <Link href={`/cases/${r.email_id}`}>{r.email_id}</Link> : r.email_id}</td>
+                  <td>
+                    <div className="truncate" title={r.subject}>{r.subject}</div>
+                    {r.headline ? <div className="small muted truncate">{r.headline}</div> : <div className="small muted truncate">{r.body_preview}</div>}
+                  </td>
+                  <td className="small">{r.from}</td>
+                  <td className="right">{r.attachment_count}</td>
+                  <td><CategoryBadge category={r.category} /></td>
+                  <td><StatusBadge ui={r.ui_status} status={r.status} /></td>
+                  <td className="right small">{pct(r.confidence)}</td>
+                  <td className="right nowrap">
+                    {r.analysed ? <Link href={`/cases/${r.email_id}`} className="btn btn-sm">Open</Link> : null}{' '}
+                    <button className="btn btn-sm btn-primary" onClick={() => analyse(r.email_id)} disabled={busy === r.email_id}>
+                      {busy === r.email_id ? 'Analysing…' : r.analysed ? 'Re-analyse' : 'Analyse'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {visible.length === 0 ? (
+                <tr><td colSpan={8} className="empty">No emails match the current filters.</td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </div>
     </>
   );

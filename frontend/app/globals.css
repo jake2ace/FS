@@ -105,7 +105,19 @@ pre { background: var(--card-2); border: 1px solid var(--line); border-radius: v
 @media (max-width: 1180px) { .grid-7 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 1000px) { .grid-6, .grid-7 { grid-template-columns: repeat(3, minmax(0, 1fr)); } .grid-2, .grid-3 { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .topbar-inner { min-height: 56px; gap: 10px; } .topbar-right { width: 100%; margin-left: 0; } }
-@media (max-width: 640px) { .grid-6, .grid-7 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .nav { order: 3; width: 100%; margin-left: 0; } .main { padding: 20px 14px 56px; } h1 { font-size: 20px; } }
+@media (max-width: 640px) {
+  .grid-6, .grid-7 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nav { order: 3; width: 100%; margin-left: 0; }
+  .main { padding: 20px 14px 56px; }
+  h1 { font-size: 20px; }
+  /* Tighter cells buy about 60px, which is usually the difference between a table that
+     fits the screen and one the reader has to drag sideways. */
+  th, td { padding: 9px 8px; }
+  .mono { font-size: 11.5px; }
+  /* The header wraps to four rows on a phone, so pinning it would park roughly a fifth
+     of the screen over whatever the reader just scrolled to. It scrolls away here. */
+  .topbar { position: static; }
+}
 
 /* ---------- cards ---------- */
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; overflow-x: auto; }
@@ -121,6 +133,12 @@ pre { background: var(--card-2); border: 1px solid var(--line); border-radius: v
 
 /* ---------- tables ---------- */
 table { width: 100%; border-collapse: collapse; }
+/* A table is the one thing on these pages whose width is set by its content, not by
+   its container: five columns of no-wrap headers plus a mono run id cannot fit a phone.
+   Without this wrapper the table widens the whole page, and a page wider than the
+   viewport shifts everything sideways - including the sticky header - so the left edge
+   of every label is cut off. The overflow is confined to the table's own box instead. */
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 th { text-align: left; font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; color: var(--faint); padding: 9px 10px; border-bottom: 1px solid var(--line); background: transparent; white-space: nowrap; }
 td { padding: 11px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 tr:last-child td { border-bottom: 0; }

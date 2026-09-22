@@ -5,6 +5,9 @@ Averis x Monash Hackathon 2026 参赛作品（Shipping Document Verification 赛
 
 **在线原型：** https://fs-two-sand.vercel.app/
 
+**演示视频：** [YouTube](https://www.youtube.com/watch?v=VvE_S-22u-I) · **[Google Drive 高清原版](https://drive.google.com/file/d/1bgl4TA7SAE1CsN9b2Zo-3_wfLXRMlKx5/view?usp=sharing)**
+> YouTube 的压缩会让画面上的小字变糊 —— 七字段逐项对照和原文引证，在 Drive 那一份里更清楚。
+
 > English version: **[README.md](README.md)**
 
 系统读取业务共享收件箱，先把邮件分成五类；对每一封「要求核对提单」的邮件，读取 Shipping Instruction（SI）

@@ -5,6 +5,10 @@ Built for the Averis x Monash Hackathon 2026 (Shipping Document Verification use
 
 **Live prototype:** https://fs-two-sand.vercel.app/
 
+**Demo video:** [YouTube](https://www.youtube.com/watch?v=VvE_S-22u-I) · **[higher-quality original on Google Drive](https://drive.google.com/file/d/1bgl4TA7SAE1CsN9b2Zo-3_wfLXRMlKx5/view?usp=sharing)**
+> YouTube's compression softens the small on-screen text - the field-by-field comparison and the
+> source evidence are easier to read in the Drive copy.
+
 > 中文版说明见 **[README.zh-CN.md](README.zh-CN.md)**（部署步骤与环境变量中文对照）。
 
 FreightSentinel reads the shared operations inbox, tells the five kinds of emails apart, and for every

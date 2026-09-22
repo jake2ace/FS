@@ -6,6 +6,7 @@ import { OutcomeBar } from '@/components/OutcomeBar';
 import { RunDonut } from '@/components/RunDonut';
 import { api, post, del, fmtTime, type RunState } from '@/lib/api';
 import { useRunPulse, useLiveRefresh } from '@/lib/useLiveRefresh';
+import { useLanguage } from '@/components/LanguageProvider';
 
 export default function BatchRun() {
   const [runs, setRuns] = useState<RunState[]>([]);
@@ -29,6 +30,10 @@ export default function BatchRun() {
   // same endpoint - two requests a second for identical data. It reads that poll instead,
   // and keeps its own load() for the submission status, which the poller does not carry.
   const pulse = useRunPulse();
+  // Counts sit inside these sentences, so they are written per language here rather
+  // than left to the dictionary, which matches whole text nodes.
+  const { locale } = useLanguage();
+  const zh = locale === 'zh';
   useEffect(() => {
     load();
   }, []);
@@ -132,9 +137,9 @@ export default function BatchRun() {
                 // first model would not settle alone, and the senior pass deliberately
                 // thinks for longer. Saying so turns dead time into the thing worth watching.
                 <p className="small muted" style={{ margin: '0 0 10px' }}>
-                  {latest.total - latest.done} still running. The stragglers are the cases that
-                  went to senior review - that pass thinks for longer on purpose, so the last
-                  few take far longer than the first few hundred.
+                  {zh
+                    ? `还有 ${latest.total - latest.done} 封在跑。剩下的都是转去资深复核的案件 —— 那一轮是刻意想得更久的，所以最后几封会比前面几百封慢得多。`
+                    : `${latest.total - latest.done} still running. The stragglers are the cases that went to senior review - that pass thinks for longer on purpose, so the last few take far longer than the first few hundred.`}
                 </p>
               ) : null}
               <div className="run-split">
@@ -208,7 +213,9 @@ export default function BatchRun() {
               <h2>Previous runs</h2>
               {runs.length > 1 ? (
                 <span className="small muted">
-                  {runs.length - 1 > 3 ? `latest 3 of ${runs.length - 1}` : `${runs.length - 1} earlier`}
+                  {runs.length - 1 > 3
+                    ? (zh ? `最近 3 次，共 ${runs.length - 1} 次` : `latest 3 of ${runs.length - 1}`)
+                    : (zh ? `另有 ${runs.length - 1} 次` : `${runs.length - 1} earlier`)}
                 </span>
               ) : null}
             </div>

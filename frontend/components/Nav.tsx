@@ -95,8 +95,8 @@ export default function Nav() {
                   chip has to show the run's progress or it reads as a frozen app. */}
               <span className="chip chip-dark">
                 {pulse.active && pulse.total
-                  ? `${pulse.done}/${pulse.total} analysing…`
-                  : `${health.results_cached}/${health.emails} analysed`}
+                  ? (locale === 'zh' ? `正在分析 ${pulse.done}/${pulse.total}` : `${pulse.done}/${pulse.total} analysing…`)
+                  : (locale === 'zh' ? `${health.results_cached}/${health.emails} 已分析` : `${health.results_cached}/${health.emails} analysed`)}
               </span>
             </>
           ) : (

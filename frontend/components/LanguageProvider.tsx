@@ -11,6 +11,21 @@ const LanguageContext = createContext<{
 
 const ZH: Record<string, string> = {
   'Shipping Document Verification': '航运单据核验',
+
+  // Added with the export, the clear control and the escalation badge. Values read out
+  // of a document are never translated - only the words the page writes itself.
+  Export: '导出',
+  'Clear results': '清空结果',
+  'Confirm — delete all results': '确认 —— 删除全部结果',
+  'Clearing…': '清空中…',
+  Cancel: '取消',
+  'Removes every stored analysis result, on disk as well as in memory': '删除全部已存储的分析结果，磁盘和内存都清除',
+  'Escalated': '已升级',
+  'Taken over by a person': '已由人工接手',
+  'confirmed, flagged or closed by hand - no longer one of the four above': '人工确认、标记或关闭 —— 不再属于上面四类',
+  'The results from this run were cleared. The run itself is kept as a record - analyse the inbox again to repopulate the dashboards.': '这一轮的结果已被清空。运行记录本身保留 —— 重新分析收件箱即可让面板恢复数据。',
+  'follows sample_submission.json exactly - one record per email_id, for machine checking.': '的结构与 sample_submission.json 完全一致 —— 每个 email_id 一条记录，供机器核对。',
+  'is for the operations team: one row per differing field, with both readings side by side, so the list can be worked outside this screen.': '给运营团队：一个差异字段一行，两边的读数并排，离开这个界面也能照着处理。',
   'backend offline': '后端离线',
   'connecting…': '连接中…',
   'AI is unavailable; analysis requires a working provider': 'AI 不可用；分析需要有效的 AI 服务',

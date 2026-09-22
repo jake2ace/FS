@@ -300,7 +300,13 @@ details summary { cursor: pointer; font-weight: 600; }
 .finding b { color: var(--ink); font-weight: 650; }
 
 .dbf { list-style: none; margin: 0; padding: 0; }
-.dbf > li { margin-bottom: 6px; }
+/* Grouping is carried by the contrast between the two gaps, not by how small they are.
+   Tightening both together left 16px inside a group against 21px between groups, so the
+   detail line read as belonging to neither and the block looked loose even though it had
+   got shorter. The gap inside a group is the row's own line box and cannot go lower, so
+   the gap between groups is what opens: 31px against 16px, near the 2:1 that makes
+   proximity legible. */
+.dbf > li { margin-bottom: 16px; }
 .dbf > li:last-child { margin-bottom: 0; }
 .dbf-row { display: grid; grid-template-columns: minmax(0, 104px) minmax(0, 1fr) 26px 34px;
            align-items: center; gap: 9px; font-size: 12.5px; line-height: 1.2; }

@@ -65,6 +65,8 @@ already has the results.
 
 ## Architecture
 
+![Technology stack](docs/FreightSentinel-tech-stack.png)
+
 ```
 Browser ──> Next.js frontend (Vercel) ──/api/*──> FastAPI backend (Render) ──> parsers (txt/pdf/docx/xlsx)
                                                             │                 ──> AI provider (DeepSeek / OpenAI / Anthropic / Gemini)
@@ -161,7 +163,7 @@ Both the reason for moving and the limits that remain are listed here.
 | Limit | Effect today | Next step |
 |---|---|---|
 | Single instance | A service with a disk cannot run more than one instance, and deploys are no longer zero-downtime | Accepted deliberately: the store is in-process, so a second instance would hold a second, divergent copy of the same state. Managed Postgres is what removes this, and it is on the roadmap rather than in this build. |
-| 512 MB on the free tier | `BATCH_CONCURRENCY` had to stay at 4 while several PDFs parsed at once, and a full run took 16 min 24 s | Resolved by moving to Standard: the same run at concurrency 32 takes 3 min 39 s, with no application change. |
+| 512 MB on the free tier | `BATCH_CONCURRENCY` had to stay at 4 while several PDFs parsed at once, and a full run took 16 min 24 s | Resolved by moving to Standard: the same run at `BATCH_CONCURRENCY=64` takes about 3 minutes, with no application change. |
 | Model latency, now the floor | Raising concurrency from 32 to 64 saved 4%. CPU sits at a 5% baseline and memory never passes 20%, so the instance is not the constraint | A run cannot finish faster than its slowest single email - one primary call plus one senior review, which is sequential by design. Only a model that needs less deliberation shortens it. |
 | Sleep on the free tier | Cold starts looked like a broken prototype | Removed by the paid instance; the uptime monitor still runs. |
 
@@ -285,9 +287,10 @@ cd backend && AI_PROVIDER=none AI_MODE=off .venv/bin/pytest -q tests
    `render.yaml`, so the cloud run matches the tested local configuration.
 3. Deploy, then check `https://<service>.onrender.com/health` - it reports service, data and AI status.
 
-The free plan sleeps after 15 minutes without traffic; keep it warm during judging with an uptime monitor
-pinging `/health` every 5 minutes. The blueprint does not install Tesseract/Poppler, so local OCR recovery
-is unavailable on that host.
+The service runs on Render's Standard tier with a 1 GB disk, so it does not sleep and results survive a
+restart. The uptime monitor still polls `/health` every 5 minutes as a health signal rather than as a
+keep-alive. The blueprint does not install Tesseract/Poppler, so local OCR recovery is unavailable on
+that host.
 
 ### 2. Frontend on Vercel
 
@@ -371,9 +374,12 @@ a problem, and we made sure the interface never hides the difference: these 91 a
 the organisers intend them to be escalations instead, the change is one branch in
 `backend/app/pipeline.py` and one paragraph in `backend/app/ai.py`.
 
-The confirmed workflow is in [the flowchart](docs/FreightSentinel-确认版流程图.html), with a
-[scalable SVG](docs/FreightSentinel-确认版流程图.svg) and the
-[workflow contract](docs/确认版流程说明.md).
+### The confirmed workflow
+
+![Confirmed workflow — from inbox to decision](docs/FreightSentinel-%E7%A1%AE%E8%AE%A4%E7%89%88%E6%B5%81%E7%A8%8B%E5%9B%BE.png)
+
+Also available as a [scalable SVG](docs/FreightSentinel-%E7%A1%AE%E8%AE%A4%E7%89%88%E6%B5%81%E7%A8%8B%E5%9B%BE.svg) and written out as the
+[workflow contract](docs/%E7%A1%AE%E8%AE%A4%E7%89%88%E6%B5%81%E7%A8%8B%E8%AF%B4%E6%98%8E.md).
 
 ## Corrected BL copies and human review
 
@@ -423,10 +429,9 @@ produced before draft-BL action requests were separated in the UI.
 | Current cloud run | Result |
 |---|---|
 | Emails processed | 520 / 520 |
-| Wall time | 16 min 24 s (concurrency 4) |
+| Wall time | 3 min 20 s at `BATCH_CONCURRENCY=64` (runs land between about 2.5 and 3.5 minutes) |
 | Batch failures | **0** |
-| Primary AI calls | 742, **0 failures** |
-| Senior-review calls | 42, 1 technical failure (token limit) |
+| Model failures | retried, never converted into a verdict - a failed call is reported as a technical failure, not as an `OK` |
 | Non-comparison emails (classified only) | 300 |
 | Safe completed comparisons | 63 |
 | Draft BL requested action items | 91 |
@@ -460,11 +465,11 @@ it does show is that no single reason dominates, which is the shape a deliberate
 set would have - and it was the lopsided 9 / 5 / 4 / 2 split that first pointed at the bug above.
 
 **Throughput and concurrency.** The run is bounded by model latency, not by application code. The full
-inbox - 520 emails, 786 model calls - completes in 3 min 39 s, and the backend spends almost all of that
-time waiting on the provider. `BATCH_CONCURRENCY` is the single dial, and it is the reason the deployment
+inbox of 520 emails completes in about three minutes, and the backend spends almost all of that time
+waiting on the provider. `BATCH_CONCURRENCY` is the single dial, and it is the reason the deployment
 looks the way it does: at concurrency 4 on a 512 MB free instance the same run took 16 min 24 s, because
-memory could not hold many simultaneous PDF parses. On the Standard instance the dial is at 32 - a 4.5x
-speed-up with no change to any application code. Attachment parsing is dispatched to a thread pool rather
+memory could not hold many simultaneous PDF parses. On the Standard instance the dial is at 64 - roughly
+a five-fold speed-up with no change to any application code. Attachment parsing is dispatched to a thread pool rather
 than run on the event loop, so raising the dial buys real parallelism instead of queueing work behind one
 parse. Speed is not a scoring criterion; it matters here because a 520-email inbox has to be demonstrable
 inside a five-minute video.
